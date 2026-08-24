@@ -1,0 +1,77 @@
+{
+  "documentId": "86f21e07-59b0-4c32-ae60-f96307119d77",
+  "sourceFilename": "book_86f21e07-59b0-4c32-ae60-f96307119d77",
+  "pageCount": 4,
+  "generator": "prism-backend",
+  "engine": "OpenCV-Document-Scanner",
+  "vlEngine": null,
+  "createdAt": "2026-08-24T11:41:45.571762Z",
+  "pages": [
+    {
+      "pageNumber": 1,
+      "width": 554.0,
+      "height": 554.0,
+      "rotation": 0.0,
+      "imageRef": "D:\\Mobile Apps\\prism\\backend\\jobs\\86f21e07-59b0-4c32-ae60-f96307119d77\\page_0000.png",
+      "imageBase64": null,
+      "elements": [],
+      "markdown": null,
+      "warnings": [
+        "OpenCV-Document-Scanner produced the processed page image.",
+        "The OCR pipeline returned no parsable result for this page."
+      ],
+      "vlAvailable": false,
+      "vlText": null
+    },
+    {
+      "pageNumber": 2,
+      "width": 823.0,
+      "height": 425.0,
+      "rotation": 0.0,
+      "imageRef": "D:\\Mobile Apps\\prism\\backend\\jobs\\86f21e07-59b0-4c32-ae60-f96307119d77\\page_0001.png",
+      "imageBase64": null,
+      "elements": [],
+      "markdown": null,
+      "warnings": [
+        "OpenCV-Document-Scanner produced the processed page image.",
+        "The OCR pipeline returned no parsable result for this page."
+      ],
+      "vlAvailable": false,
+      "vlText": null
+    },
+    {
+      "pageNumber": 3,
+      "width": 253.0,
+      "height": 349.0,
+      "rotation": 0.0,
+      "imageRef": "D:\\Mobile Apps\\prism\\backend\\jobs\\86f21e07-59b0-4c32-ae60-f96307119d77\\page_0002.png",
+      "imageBase64": null,
+      "elements": [],
+      "markdown": null,
+      "warnings": [
+        "OpenCV-Document-Scanner produced the processed page image.",
+        "The OCR pipeline returned no parsable result for this page."
+      ],
+      "vlAvailable": false,
+      "vlText": null
+    },
+    {
+      "pageNumber": 4,
+      "width": 742.0,
+      "height": 1006.0,
+      "rotation": 0.0,
+      "imageRef": "D:\\Mobile Apps\\prism\\backend\\jobs\\86f21e07-59b0-4c32-ae60-f96307119d77\\page_0003.png",
+      "imageBase64": null,
+      "elements": [],
+      "markdown": null,
+      "warnings": [
+        "OpenCV-Document-Scanner produced the processed page image.",
+        "The OCR pipeline returned no parsable result for this page."
+      ],
+      "vlAvailable": false,
+      "vlText": null
+    }
+  ],
+  "meanTextConfidence": null,
+  "lowConfidenceElementIds": []
+}

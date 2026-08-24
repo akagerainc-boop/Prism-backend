@@ -1,0 +1,34 @@
+# Secrets -- never commit the real environment file.
+.env
+
+# Virtual environments
+.venv/
+venv/
+.venv-ocr/
+
+# User data: uploaded PDFs, OCR job artifacts, temp files.
+storage/
+
+# Python bytecode / build artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# PaddleOCR downloads model weights into the user's home by default, but pin
+# them here too in case PADDLE_PDX_CACHE_HOME points into the project.
+.paddlex/
+
+
+git config --global user.name "akagerainc-boop"
+git config --global user.email "akagerainc@gmail.com"
+
+git remote -v
+
+git add .
+git commit -m "Initial Prism backend"
+
+git branch -M main
+git push -u origin main
