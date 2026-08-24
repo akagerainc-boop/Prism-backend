@@ -22,13 +22,3 @@ __pycache__/
 .paddlex/
 
 
-git config --global user.name "akagerainc-boop"
-git config --global user.email "akagerainc@gmail.com"
-
-git remote -v
-
-git add .
-git commit -m "Initial Prism backend"
-
-git branch -M main
-git push -u origin main

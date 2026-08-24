@@ -8,13 +8,13 @@
 -- on purpose so an accidental re-import can never destroy user data.
 -- ---------------------------------------------------------------------------
 
-CREATE DATABASE IF NOT EXISTS `prism`
-  DEFAULT CHARACTER SET utf8mb4
-  DEFAULT COLLATE utf8mb4_unicode_ci;
+-- CREATE DATABASE IF NOT EXISTS `prism`
+--   DEFAULT CHARACTER SET utf8mb4
+--   DEFAULT COLLATE utf8mb4_unicode_ci;
 
-USE `prism`;
+-- USE `prism`;
 
--- ---------------------------------------------------------------------------
+-- -- ---------------------------------------------------------------------------
 -- users -- one row per verified email. Created on first successful OTP verify
 -- (signup and login are the same flow).
 -- ---------------------------------------------------------------------------

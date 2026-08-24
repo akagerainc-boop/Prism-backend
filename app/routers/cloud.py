@@ -86,7 +86,17 @@ def _refresh_usage_cache(db: Session, user_id: int) -> int:
         )
         or 0
     )
-    usage = db.get(StorageUsage, user_id)
+    # autoflush is disabled for request sessions. When a new cloud account is
+    # created, _get_or_create_user() may already have queued this row in
+    # db.new, so db.get() cannot see it yet and must not create a duplicate.
+    usage = next(
+        (
+            pending
+            for pending in db.new
+            if isinstance(pending, StorageUsage) and pending.user_id == user_id
+        ),
+        None,
+    ) or db.get(StorageUsage, user_id)
     if usage is None:
         usage = StorageUsage(user_id=user_id)
     usage.used_bytes = used
