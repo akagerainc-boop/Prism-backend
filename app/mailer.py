@@ -22,6 +22,9 @@ from __future__ import annotations
 
 import smtplib
 import ssl
+import json
+import urllib.error
+import urllib.request
 from email.message import EmailMessage
 from email.utils import formataddr, make_msgid
 
@@ -168,6 +171,7 @@ def _send_with_ssl(msg: EmailMessage) -> None:
         log.info("SMTP DEBUG: Gmail authentication successful")
 
         server.send_message(msg)
+        log.info("SMTP DEBUG: SMTP message accepted")
 
         log.info("SMTP DEBUG: SMTP message accepted")
 
@@ -209,8 +213,41 @@ def _send_with_starttls(msg: EmailMessage) -> None:
 
         server.send_message(msg)
 
-        log.info("SMTP DEBUG: SMTP message accepted")
 
+def _send_with_resend(msg: EmailMessage) -> None:
+    """Send through Resend's HTTPS API, which works on Render."""
+    body = msg.get_body(preferencelist=("plain",))
+    html_body = msg.get_body(preferencelist=("html",))
+    payload = {
+        "from": settings.email_from,
+        "to": [msg["To"]],
+        "subject": msg["Subject"],
+        "text": body.get_content() if body else "",
+        "html": html_body.get_content() if html_body else "",
+    }
+    request = urllib.request.Request(
+        "https://api.resend.com/emails",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {settings.resend_api_key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    log.info("Email DEBUG: sending through Resend HTTPS API")
+    try:
+        with urllib.request.urlopen(
+            request, timeout=settings.smtp_timeout_seconds
+        ) as response:
+            if response.status < 200 or response.status >= 300:
+                raise MailError("Resend rejected the email.")
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        log.error("Resend rejected the email: HTTP %s: %s", exc.code, detail)
+        raise MailError("Resend rejected the email.") from exc
+    except urllib.error.URLError as exc:
+        log.error("Network error while calling Resend: %s", exc.reason)
+        raise MailError("Could not connect to Resend.") from exc
 
 def send_otp_email(
     to_email: str,
@@ -237,8 +274,13 @@ def send_otp_email(
         )
         return
 
+    if settings.email_provider.lower() == "resend":
+        if not settings.resend_api_key or not settings.email_from:
+            raise MailError(
+                "EMAIL_FROM / RESEND_API_KEY are not configured."
+            )
     # Validate SMTP credentials.
-    if (
+    elif (
         not settings.smtp_user
         or not settings.smtp_app_password
     ):
@@ -252,20 +294,24 @@ def send_otp_email(
     #
     # IMPORTANT:
     # We intentionally DO NOT log SMTP_APP_PASSWORD.
-    log.info(
-        "SMTP DEBUG: configuration host=%r port=%r ssl=%r user=%r",
-        settings.smtp_host,
-        settings.smtp_port,
-        settings.smtp_use_ssl,
-        settings.smtp_user,
-    )
+    if settings.email_provider.lower() == "resend":
+        log.info("Email DEBUG: provider=resend from=%r", settings.email_from)
+    else:
+        log.info(
+            "SMTP DEBUG: configuration host=%r port=%r ssl=%r user=%r",
+            settings.smtp_host,
+            settings.smtp_port,
+            settings.smtp_use_ssl,
+            settings.smtp_user,
+        )
 
     # Do not log the actual password.
-    log.info(
-        "SMTP DEBUG: App Password configured=%s length=%d",
-        bool(settings.smtp_app_password),
-        len(settings.smtp_app_password),
-    )
+    if settings.email_provider.lower() != "resend":
+        log.info(
+            "SMTP DEBUG: App Password configured=%s length=%d",
+            bool(settings.smtp_app_password),
+            len(settings.smtp_app_password),
+        )
 
     msg = _build_message(
         to_email=to_email,
@@ -275,9 +321,10 @@ def send_otp_email(
 
     try:
 
-        # Gmail port 465:
-        # implicit SSL/TLS.
-        if (
+        if settings.email_provider.lower() == "resend":
+            _send_with_resend(msg)
+        # Gmail port 465: implicit SSL/TLS.
+        elif (
             settings.smtp_use_ssl
             or settings.smtp_port == 465
         ):

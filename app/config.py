@@ -56,6 +56,11 @@ class Settings(BaseSettings):
     otp_min_interval_seconds: int = Field(default=60, alias="OTP_MIN_INTERVAL_SECONDS")
     otp_max_per_hour: int = Field(default=5, alias="OTP_MAX_PER_HOUR")
 
+    # ---- Email delivery ----------------------------------------------------
+    email_provider: str = Field(default="smtp", alias="EMAIL_PROVIDER")
+    email_from: str = Field(default="", alias="EMAIL_FROM")
+    resend_api_key: str = Field(default="", alias="RESEND_API_KEY")
+
     # ---- Gmail SMTP --------------------------------------------------------
     smtp_host: str = Field(default="smtp.gmail.com", alias="SMTP_HOST")
     smtp_port: int = Field(default=465, alias="SMTP_PORT")  # 465 = implicit TLS

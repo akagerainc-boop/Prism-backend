@@ -56,7 +56,11 @@ async def lifespan(app: FastAPI):
 
     if not settings.jwt_secret:
         log.error("JWT_SECRET is not set -- /auth/email/verify-otp will fail.")
-    if not settings.smtp_dev_mode and not settings.smtp_app_password:
+    if (
+        not settings.smtp_dev_mode
+        and settings.email_provider.lower() == "smtp"
+        and not settings.smtp_app_password
+    ):
         log.warning(
             "SMTP_APP_PASSWORD is not set -- OTP emails will fail. Set it in "
             "backend/.env, or set SMTP_DEV_MODE=true to log codes instead."
@@ -181,6 +185,12 @@ def health_detail() -> dict:
             "host": settings.smtp_host,
             "port": settings.smtp_port,
         },
+        "emailProvider": settings.email_provider,
+        "emailConfigured": bool(
+            settings.resend_api_key and settings.email_from
+        ) if settings.email_provider.lower() == "resend" else bool(
+            settings.smtp_user and settings.smtp_app_password
+        ),
         "jwtConfigured": bool(settings.jwt_secret),
         "storageRoot": str(settings.storage_path),
         "ocr": pipeline_status(),

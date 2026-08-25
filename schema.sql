@@ -65,6 +65,11 @@ CREATE TABLE IF NOT EXISTS `otp_codes` (
   KEY `ix_otp_codes_expires_at` (`expires_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Repair databases created before `id` was defined as AUTO_INCREMENT.
+-- CREATE TABLE IF NOT EXISTS does not alter an existing table.
+ALTER TABLE `otp_codes`
+  MODIFY COLUMN `id` BIGINT NOT NULL AUTO_INCREMENT;
+
 -- ---------------------------------------------------------------------------
 -- otp_requests -- request timestamps used for per-email rate limiting
 -- (max 1 per 60s, max 5 per hour) so the Gmail sending quota can't be burned.
