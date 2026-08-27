@@ -8,6 +8,7 @@ venv/
 
 # User data: uploaded PDFs, OCR job artifacts, temp files.
 storage/
+tmp/
 
 # Python bytecode / build artifacts
 __pycache__/

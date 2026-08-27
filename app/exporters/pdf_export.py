@@ -17,7 +17,7 @@ from ..config import settings
 from ..document_model import table_rows
 from ..logging_config import get_logger
 from ..schemas import DocElement, DocPage, StructuredDocument
-from .images import page_image_bytes
+from .images import element_image_bytes, page_image_bytes
 
 log = get_logger(__name__)
 
@@ -247,6 +247,110 @@ def export_pdf(document: StructuredDocument, **_: object) -> bytes:
     return buffer.getvalue()
 
 
+def _render_formula_image(latex: str, box_width: float, box_height: float) -> bytes | None:
+    """Render a LaTeX-ish formula to a transparent PNG via matplotlib's mathtext.
+
+    mathtext (matplotlib's built-in math renderer) covers a wide common
+    subset -- fractions, roots, sub/superscripts, Greek letters, sums,
+    integrals -- without needing a real LaTeX installation. It cannot parse
+    everything real LaTeX can (e.g. \\begin{...} environments); when it
+    can't, this returns None and the caller falls back to drawing the raw
+    text instead of fabricating a rendering.
+    """
+    try:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except Exception:  # pragma: no cover - matplotlib not installed
+        return None
+
+    text = latex.strip()
+    if not text:
+        return None
+    if not (text.startswith("$") and text.endswith("$")):
+        text = f"${text}$"
+
+    dpi = 200.0
+    fig = plt.figure(
+        figsize=(max(box_width, 40.0) / dpi, max(box_height, 20.0) / dpi), dpi=dpi
+    )
+    try:
+        fig.text(
+            0.5, 0.5, text,
+            fontsize=max(8.0, box_height * 0.5),
+            ha="center", va="center", color="black",
+        )
+        buffer = io.BytesIO()
+        fig.savefig(buffer, format="png", transparent=True, bbox_inches="tight", pad_inches=0.02)
+        return buffer.getvalue()
+    except Exception as exc:
+        log.debug("Could not render formula %r: %s", latex[:60], exc)
+        return None
+    finally:
+        plt.close(fig)
+
+
+def _draw_table_cells(
+    pdf, table, *, x0: float, pdf_y: float, box_width: float, box_height: float, font: str,
+) -> None:
+    """Draw a real editable-looking table: grid lines plus each cell's own
+    text inside its own cell rect (honouring row/col spans), instead of
+    dumping a whole row as one joined line of text.
+    """
+    pdf.setStrokeColorRGB(0.55, 0.55, 0.55)
+    pdf.rect(x0, pdf_y, box_width, box_height, fill=0, stroke=1)
+
+    rows = max(table.rowCount or max((c.row + c.rowSpan for c in table.cells), default=1), 1)
+    columns = max(
+        table.columnCount or max((c.col + c.colSpan for c in table.cells), default=1), 1
+    )
+    row_height = box_height / rows
+    col_width = box_width / columns
+
+    for row in range(1, rows):
+        y = pdf_y + box_height - row * row_height
+        pdf.line(x0, y, x0 + box_width, y)
+    for column in range(1, columns):
+        x = x0 + column * col_width
+        pdf.line(x, pdf_y, x, pdf_y + box_height)
+
+    pdf.setFillColorRGB(0, 0, 0)
+    for cell in table.cells:
+        text = (cell.text or "").strip()
+        if not text:
+            continue
+        row_span = max(cell.rowSpan, 1)
+        col_span = max(cell.colSpan, 1)
+        cell_x = x0 + cell.col * col_width
+        cell_width = col_width * col_span
+        cell_top = pdf_y + box_height - cell.row * row_height
+        cell_height = row_height * row_span
+
+        size = min(11.0, max(6.0, cell_height * 0.55))
+        font_name = font
+        if cell.isHeader:
+            # Helvetica-Bold exists whenever the base font is Helvetica; a
+            # registered Unicode TTF may not ship a bold variant, so headers
+            # in that case stay regular weight rather than erroring.
+            font_name = "Helvetica-Bold" if font == "Helvetica" else font
+        pdf.setFont(font_name, size)
+
+        line = _encodable(text, font)
+        pad = 3.0
+        baseline = cell_top - cell_height * 0.65
+        available = max(cell_width - 2 * pad, 4.0)
+        natural = pdf.stringWidth(line, font_name, size)
+        if natural > available:
+            pdf.saveState()
+            pdf.translate(cell_x + pad, baseline)
+            pdf.scale(max(available / natural, 0.1), 1.0)
+            pdf.drawString(0, 0, line)
+            pdf.restoreState()
+        else:
+            pdf.drawString(cell_x + pad, baseline, line)
+
+
 def export_clean_pdf(document: StructuredDocument, **_: object) -> bytes:
     """Reconstruct pages on white paper from OCR/layout coordinates.
 
@@ -295,6 +399,35 @@ def export_clean_pdf(document: StructuredDocument, **_: object) -> bytes:
                         log.debug("Could not draw visual element %s: %s", element.id, exc)
                 continue
 
+            if element.type == "formula" and element.text:
+                rendered = _render_formula_image(element.text, box_width, box_height)
+                if rendered:
+                    try:
+                        pdf.drawImage(
+                            ImageReader(io.BytesIO(rendered)),
+                            x0,
+                            pdf_y,
+                            width=box_width,
+                            height=box_height,
+                            preserveAspectRatio=True,
+                            anchor="c",
+                            mask="auto",
+                        )
+                        continue
+                    except Exception as exc:  # pragma: no cover
+                        log.debug("Could not draw formula image %s: %s", element.id, exc)
+                # mathtext couldn't parse it (or drawing failed) -- fall through
+                # and draw the raw LaTeX source as plain text instead of
+                # silently dropping the element.
+
+            if element.type == "table" and element.table is not None and element.table.cells:
+                _draw_table_cells(
+                    pdf, element.table,
+                    x0=x0, pdf_y=pdf_y, box_width=box_width, box_height=box_height,
+                    font=font,
+                )
+                continue
+
             lines = _element_lines(element)
             if not lines:
                 continue
@@ -321,19 +454,6 @@ def export_clean_pdf(document: StructuredDocument, **_: object) -> bytes:
                     pdf.restoreState()
                 else:
                     pdf.drawString(x0, baseline, text)
-
-            if element.type == "table":
-                pdf.setStrokeColorRGB(0.55, 0.55, 0.55)
-                pdf.rect(x0, pdf_y, box_width, box_height, fill=0, stroke=1)
-                if element.table is not None:
-                    rows = max(element.table.rowCount, 1)
-                    columns = max(element.table.columnCount, 1)
-                    for row in range(1, rows):
-                        y = pdf_y + box_height * row / rows
-                        pdf.line(x0, y, x1, y)
-                    for column in range(1, columns):
-                        x = x0 + box_width * column / columns
-                        pdf.line(x, pdf_y, x, pdf_y + box_height)
 
         pdf.showPage()
 
