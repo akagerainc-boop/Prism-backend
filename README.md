@@ -175,7 +175,7 @@ backend/
     schemas.py                Pydantic request/response models
     security.py                OTP hashing, JWT, email validation
     mailer.py                   Resend/Gmail SMTP email sending
-    plans.py                     Free/Student/Personal storage limits
+    plans.py                     Prism is free -- one flat storage limit
     storage.py                    Path helpers, path-traversal guards
     passport.py                    rembg background replacement
     imaging.py                      Shared image preprocessing helpers

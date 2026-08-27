@@ -1,40 +1,29 @@
-"""Plan catalog -- mirrors ``lib/models/prism_plan.dart``.
+"""Prism is fully free -- one flat Prism Cloud storage limit for every
+account. No paid tiers exist; ``normalize_plan`` always resolves to
+``"free"`` regardless of what a (now-nonexistent) client billing screen
+might send, which also self-heals any account row left over from before
+paid plans were removed the next time ``/cloud/account`` runs.
 
-The Flutter catalog defines three plans and states their storage as
-"50 MB" / "500 MB" / "5 GB". Those strings are marketing-decimal units, so the
-byte limits below use decimal (1 MB = 1_000_000 B), which is what a user
-comparing "50 MB" against their file manager will expect.
-
-If ``prism_plan.dart`` ever changes, change these two things together.
+Mirrors ``lib/constant/storage_limits.dart``'s ``kCloudStorageLimitMb`` --
+change both together if this number ever changes.
 """
 
 from __future__ import annotations
 
 MB = 1_000_000
-GB = 1_000_000_000
 
 DEFAULT_PLAN = "free"
 
-# plan id (matches PlanId.name on the Dart side) -> storage limit in bytes
 PLAN_STORAGE_LIMITS: dict[str, int] = {
     "free": 50 * MB,  # 50 MB
-    "student": 500 * MB,  # 500 MB
-    "personal": 5 * GB,  # 5 GB
 }
 
 
 def normalize_plan(plan: str | None) -> str:
-    """Map an incoming plan id onto a known plan, defaulting to ``free``.
-
-    Accepts the raw ``PlanId.name`` the client sends, and tolerates values like
-    ``"PlanId.free"`` or ``"Free"`` defensively.
+    """Always ``"free"`` -- kept as a function (not a constant) so callers
+    that used to branch on a client-supplied plan don't need to change.
     """
-    if not plan:
-        return DEFAULT_PLAN
-    candidate = str(plan).strip().lower()
-    if candidate.startswith("planid."):
-        candidate = candidate.split(".", 1)[1]
-    return candidate if candidate in PLAN_STORAGE_LIMITS else DEFAULT_PLAN
+    return DEFAULT_PLAN
 
 
 def storage_limit_for(plan: str | None) -> int:

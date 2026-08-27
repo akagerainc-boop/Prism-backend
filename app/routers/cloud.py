@@ -139,8 +139,9 @@ def create_or_fetch_account(
     if account is None:
         account = Account(user_id=user.id, plan=plan, storage_limit_bytes=limit)
     else:
-        # The plan the client sends is authoritative -- it reflects the user's
-        # current selection in the billing screen.
+        # Prism is fully free -- normalize_plan()/storage_limit_for() always
+        # resolve to "free" now, which also self-heals any account row left
+        # over from before paid plans were removed.
         account.plan = plan
         account.storage_limit_bytes = limit
     db.add(account)

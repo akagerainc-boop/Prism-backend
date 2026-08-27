@@ -121,15 +121,6 @@ class CardUploadResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Billing -- POST /billing/student-application
-# ---------------------------------------------------------------------------
-class StudentApplicationResponse(BaseModel):
-    id: str
-    status: str
-    message: str
-
-
-# ---------------------------------------------------------------------------
 # Prism AI history -- POST /ai/history, GET /ai/history, DELETE /ai/history/{id}
 # Mirrors lib/services/chat_history_service.dart's ChatMessageRecord /
 # ChatSessionRecord exactly -- do not rename these fields.

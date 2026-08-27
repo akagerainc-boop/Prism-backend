@@ -2,6 +2,26 @@
 
 from __future__ import annotations
 
-from . import ai_history, auth, billing, cloud, ocr, passport_photo, structure
+from . import (
+    ai_history,
+    auth,
+    card_mfa,
+    cloud,
+    ocr,
+    passport_photo,
+    perfect,
+    structure,
+    wallet,
+)
 
-__all__ = ["ai_history", "auth", "billing", "cloud", "ocr", "passport_photo", "structure"]
+__all__ = [
+    "ai_history",
+    "auth",
+    "card_mfa",
+    "cloud",
+    "ocr",
+    "passport_photo",
+    "perfect",
+    "structure",
+    "wallet",
+]

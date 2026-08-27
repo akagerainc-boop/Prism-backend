@@ -28,7 +28,6 @@ from .opencv_document_scanner import pipeline_status
 from .routers import (
     ai_history,
     auth,
-    billing,
     card_mfa,
     cloud,
     ocr,
@@ -169,7 +168,6 @@ app.include_router(passport_photo.router)
 app.include_router(ocr.router)
 app.include_router(structure.router)
 app.include_router(perfect.router)
-app.include_router(billing.router)
 app.include_router(ai_history.router)
 
 

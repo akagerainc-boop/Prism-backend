@@ -213,12 +213,10 @@ class SyncState(Base):
 
 
 class StudentApplication(Base):
-    """A submitted Student-plan application (see `routers/billing.py`).
-
-    No verification service is wired up yet -- this table exists purely to
-    durably record what the user submitted; `status` starts at "pending" and
-    stays there until someone reviews it by hand (or a real verification
-    flow is built later).
+    """Historical record only -- the Student plan (and every paid plan) was
+    removed; Prism is fully free now, so `routers/billing.py` (which wrote
+    to this table) was deleted along with it. Left in place, unwritten, so
+    any applications submitted before the removal aren't silently dropped.
     """
 
     __tablename__ = "student_applications"
