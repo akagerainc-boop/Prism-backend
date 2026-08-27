@@ -259,10 +259,9 @@ def upload_document(
                 raise HTTPException(
                     status_code=status.HTTP_507_INSUFFICIENT_STORAGE,
                     detail=(
-                        f"This upload would exceed your {account.plan} plan's "
-                        f"{_human_bytes(limit)} of Prism Cloud storage "
-                        f"({_human_bytes(used)} already used). "
-                        "Free up space or upgrade your plan."
+                        f"This upload would exceed your {_human_bytes(limit)} "
+                        f"of Prism Cloud storage ({_human_bytes(used)} already "
+                        "used). Delete older cloud documents to free up space."
                     ),
                 )
 

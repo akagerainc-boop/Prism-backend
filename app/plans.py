@@ -11,11 +11,12 @@ change both together if this number ever changes.
 from __future__ import annotations
 
 MB = 1_000_000
+GB = 1_000_000_000
 
 DEFAULT_PLAN = "free"
 
 PLAN_STORAGE_LIMITS: dict[str, int] = {
-    "free": 50 * MB,  # 50 MB
+    "free": 1 * GB,  # 1 GB
 }
 
 
