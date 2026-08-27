@@ -6,7 +6,7 @@ Render's filesystem is ephemeral), passport-photo background replacement, and
 document reconstruction for **Perfect OCR**.
 
 **No OCR/layout ML model runs on this backend.** Recognition happens client-side —
-the Flutter app reads each scanned page with Gemini 2.5 Flash (multimodal, via the
+the Flutter app reads each scanned page with Gemini 3.6 Flash (multimodal, via the
 Firebase AI SDK already used for document classification) and sends back a
 structured description of the page (headings, paragraphs, tables, formulas as
 LaTeX, figures, each with its position). This backend's job is only to turn that
