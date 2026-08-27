@@ -21,6 +21,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
+from sqlalchemy.dialects.mysql import LONGBLOB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -119,7 +120,7 @@ class Document(Base):
     )
     name: Mapped[str] = mapped_column(String(512), nullable=False)
     size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
-    storage_path: Mapped[str] = mapped_column(String(1024), nullable=False)
+    file_data: Mapped[bytes] = mapped_column(LONGBLOB, nullable=False)
     content_type: Mapped[str] = mapped_column(
         String(128), nullable=False, default="application/pdf"
     )

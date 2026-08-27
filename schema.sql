@@ -85,15 +85,16 @@ CREATE TABLE IF NOT EXISTS `otp_requests` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------------
--- documents -- PDFs backed up to Prism Cloud. Bytes live on disk under
--- PRISM_STORAGE_ROOT/<user_id>/<document_id>.pdf; this table is the index.
+-- documents -- PDFs backed up to Prism Cloud. Bytes live in `file_data`
+-- (LONGBLOB) so they survive Render's ephemeral filesystem; this table is
+-- both the index and the store.
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS `documents` (
   `id`              VARCHAR(36)   NOT NULL,
   `user_id`         BIGINT        NOT NULL,
   `name`            VARCHAR(512)  NOT NULL,
   `size_bytes`      BIGINT        NOT NULL DEFAULT 0,
-  `storage_path`    VARCHAR(1024) NOT NULL,
+  `file_data`       LONGBLOB      NOT NULL,
   `content_type`    VARCHAR(128)  NOT NULL DEFAULT 'application/pdf',
   `checksum_sha256` VARCHAR(64)   NULL DEFAULT NULL,
   `created_at`      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,

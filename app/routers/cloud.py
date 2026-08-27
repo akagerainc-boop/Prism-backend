@@ -20,11 +20,12 @@ Contract (from ``lib/services/prism_cloud_service.dart`` +
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
+import io
 import uuid
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, UploadFile, status
-from fastapi.responses import FileResponse
+from fastapi.responses import Response
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -41,7 +42,6 @@ from ..schemas import (
     CloudUploadResponse,
 )
 from ..security import is_valid_email, normalize_email
-from ..storage import document_path, is_within, safe_unlink, sha256_of, storage_root
 
 log = get_logger(__name__)
 
@@ -231,60 +231,46 @@ def upload_document(
     used = _used_bytes(db, user.id)
 
     doc_id = str(uuid.uuid4())
-    target = document_path(user.id, doc_id)
-    if not is_within(target, storage_root()):  # pragma: no cover - defensive
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid storage path."
-        )
 
-    # Stream to disk, enforcing both the per-request cap and the plan quota as
-    # we go, so an oversized upload is aborted rather than buffered whole.
+    # Buffer in memory, enforcing both the per-request cap and the plan quota
+    # as we go, so an oversized upload is rejected before it fully lands.
+    buffer = io.BytesIO()
+    digest = hashlib.sha256()
     written = 0
     try:
-        with target.open("wb") as out:
-            while True:
-                chunk = file.file.read(_CHUNK)
-                if not chunk:
-                    break
-                written += len(chunk)
+        while True:
+            chunk = file.file.read(_CHUNK)
+            if not chunk:
+                break
+            written += len(chunk)
 
-                if written > settings.max_upload_bytes:
-                    raise HTTPException(
-                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                        detail=(
-                            "That file is larger than the "
-                            f"{settings.max_upload_bytes // (1024 * 1024)} MB "
-                            "per-file limit."
-                        ),
-                    )
+            if written > settings.max_upload_bytes:
+                raise HTTPException(
+                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    detail=(
+                        "That file is larger than the "
+                        f"{settings.max_upload_bytes // (1024 * 1024)} MB "
+                        "per-file limit."
+                    ),
+                )
 
-                if used + written > limit:
-                    raise HTTPException(
-                        status_code=status.HTTP_507_INSUFFICIENT_STORAGE,
-                        detail=(
-                            f"This upload would exceed your {account.plan} plan's "
-                            f"{_human_bytes(limit)} of Prism Cloud storage "
-                            f"({_human_bytes(used)} already used). "
-                            "Free up space or upgrade your plan."
-                        ),
-                    )
+            if used + written > limit:
+                raise HTTPException(
+                    status_code=status.HTTP_507_INSUFFICIENT_STORAGE,
+                    detail=(
+                        f"This upload would exceed your {account.plan} plan's "
+                        f"{_human_bytes(limit)} of Prism Cloud storage "
+                        f"({_human_bytes(used)} already used). "
+                        "Free up space or upgrade your plan."
+                    ),
+                )
 
-                out.write(chunk)
-    except HTTPException:
-        safe_unlink(target)
-        raise
-    except OSError as exc:
-        safe_unlink(target)
-        log.error("Failed writing upload for %s: %s", normalized, exc)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Could not store the document.",
-        ) from exc
+            buffer.write(chunk)
+            digest.update(chunk)
     finally:
         file.file.close()
 
     if written == 0:
-        safe_unlink(target)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="The uploaded file is empty."
         )
@@ -295,9 +281,9 @@ def upload_document(
         user_id=user.id,
         name=doc_name,
         size_bytes=written,
-        storage_path=str(target),
+        file_data=buffer.getvalue(),
         content_type=file.content_type or "application/pdf",
-        checksum_sha256=sha256_of(target),
+        checksum_sha256=digest.hexdigest(),
         created_at=now,
         modified_at=now,
     )
@@ -330,7 +316,7 @@ def upload_document(
 # ---------------------------------------------------------------------------
 @router.get(
     "/documents/{document_id}/file",
-    response_class=FileResponse,
+    response_class=Response,
     responses={
         200: {"content": {"application/pdf": {}}, "description": "The stored PDF"},
         404: {"description": "Not found or not owned by this address"},
@@ -340,7 +326,7 @@ def download_document(
     document_id: str,
     x_user_email: str | None = Header(default=None, alias="X-User-Email"),
     db: Session = Depends(get_db),
-) -> FileResponse:
+) -> Response:
     email = _require_email_header(x_user_email)
 
     user = db.scalar(select(User).where(User.email == email))
@@ -357,17 +343,12 @@ def download_document(
     ):
         raise HTTPException(status_code=404, detail="Document not found.")
 
-    path = Path(document.storage_path)
-    if not path.is_file():
-        log.error("Document %s is indexed but missing on disk at %s", document_id, path)
-        raise HTTPException(status_code=404, detail="Document not found.")
-
     safe_name = document.name.replace('"', "").replace("\r", "").replace("\n", "")
     if not safe_name.lower().endswith(".pdf"):
         safe_name = f"{safe_name}.pdf"
 
-    return FileResponse(
-        path=path,
+    return Response(
+        content=document.file_data,
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{safe_name}"'},
     )
