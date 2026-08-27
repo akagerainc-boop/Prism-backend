@@ -231,6 +231,7 @@ def _send_with_resend(msg: EmailMessage) -> None:
         headers={
             "Authorization": f"Bearer {settings.resend_api_key}",
             "Content-Type": "application/json",
+            "User-Agent": "PrismScanner-Backend/1.0",
         },
         method="POST",
     )
