@@ -21,7 +21,7 @@ from __future__ import annotations
 import datetime as dt
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy import delete, func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..config import settings
@@ -29,6 +29,10 @@ from ..db import get_db
 from ..logging_config import get_logger
 from ..mailer import MailError, send_otp_email
 from ..models import Account, OtpCode, OtpRequestLog, StorageUsage, User
+from ..otp_flow import client_ip as _client_ip
+from ..otp_flow import enforce_rate_limit as _enforce_rate_limit
+from ..otp_flow import purge_expired as _purge_expired
+from ..otp_flow import utcnow as _utcnow
 from ..plans import DEFAULT_PLAN, storage_limit_for
 from ..schemas import (
     RequestOtpBody,
@@ -55,60 +59,6 @@ router = APIRouter(prefix="/auth/email", tags=["auth"])
 # expired code, unknown token and unknown email are indistinguishable to the
 # caller, so this endpoint cannot be used to enumerate registered addresses.
 _GENERIC_VERIFY_FAILURE = "That code isn't valid or has expired. Request a new one."
-
-
-def _utcnow() -> dt.datetime:
-    """Naive UTC -- MySQL DATETIME columns are timezone-less."""
-    return dt.datetime.now(dt.timezone.utc).replace(tzinfo=None)
-
-
-def _client_ip(request: Request) -> str | None:
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip()[:64]
-    return request.client.host[:64] if request.client else None
-
-
-def _enforce_rate_limit(db: Session, email: str) -> None:
-    """Max 1 request per ``otp_min_interval_seconds``, max ``otp_max_per_hour``."""
-    now = _utcnow()
-
-    last_at = db.scalar(
-        select(func.max(OtpRequestLog.requested_at)).where(
-            OtpRequestLog.email == email
-        )
-    )
-    if last_at is not None:
-        elapsed = (now - last_at).total_seconds()
-        if elapsed < settings.otp_min_interval_seconds:
-            wait = int(settings.otp_min_interval_seconds - elapsed) + 1
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail=f"Please wait {wait} seconds before requesting another code.",
-            )
-
-    hour_ago = now - dt.timedelta(hours=1)
-    recent = db.scalar(
-        select(func.count(OtpRequestLog.id)).where(
-            OtpRequestLog.email == email,
-            OtpRequestLog.requested_at >= hour_ago,
-        )
-    )
-    if (recent or 0) >= settings.otp_max_per_hour:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Too many codes requested for this address. Try again in an hour.",
-        )
-
-
-def _purge_expired(db: Session, email: str) -> None:
-    """Drop this address's stale challenges so only the newest one is live."""
-    db.execute(
-        delete(OtpCode).where(
-            OtpCode.email == email,
-            (OtpCode.expires_at < _utcnow()) | (OtpCode.consumed_at.is_not(None)),
-        )
-    )
 
 
 @router.post(
