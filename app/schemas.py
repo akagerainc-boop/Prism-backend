@@ -94,6 +94,33 @@ class CloudUploadResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Wallet cards -- POST/GET /cloud/cards, GET .../front, .../back
+# ---------------------------------------------------------------------------
+class CardSummary(BaseModel):
+    """One synced Wallet card. ``cardData`` is the client's own field set
+    (see ``lib/models/wallet_card.dart``) round-tripped verbatim -- this
+    backend never interprets its contents beyond storing/returning it.
+    """
+
+    id: str
+    type: str
+    cardData: dict[str, Any]
+    hasFrontImage: bool
+    hasBackImage: bool
+    modifiedAt: dt.datetime
+
+
+class CardListResponse(BaseModel):
+    cards: list[CardSummary]
+
+
+class CardUploadResponse(BaseModel):
+    id: str
+    modifiedAt: dt.datetime
+    message: str
+
+
+# ---------------------------------------------------------------------------
 # Billing -- POST /billing/student-application
 # ---------------------------------------------------------------------------
 class StudentApplicationResponse(BaseModel):

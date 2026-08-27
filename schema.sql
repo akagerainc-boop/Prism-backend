@@ -108,6 +108,29 @@ CREATE TABLE IF NOT EXISTS `documents` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------------
+-- cards -- Wallet cards (bank card, national ID, passport, driving license)
+-- synced to Prism Cloud. `card_data` holds every non-image field as JSON;
+-- front/back photos (ID/passport/license only) live in their own LONGBLOB
+-- columns, same BLOB-in-MySQL approach as `documents`.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `cards` (
+  `id`           VARCHAR(36)  NOT NULL,
+  `user_id`      BIGINT       NOT NULL,
+  `type`         VARCHAR(32)  NOT NULL,
+  `card_data`    JSON         NOT NULL,
+  `front_image`  LONGBLOB     NULL,
+  `back_image`   LONGBLOB     NULL,
+  `created_at`   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `modified_at`  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
+                               ON UPDATE CURRENT_TIMESTAMP,
+  `deleted_at`   DATETIME     NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `ix_cards_user_modified` (`user_id`, `modified_at`),
+  CONSTRAINT `fk_cards_user` FOREIGN KEY (`user_id`)
+    REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------------
 -- storage_usage -- cheap-to-read cache of consumed bytes. The authoritative
 -- value is always SUM(documents.size_bytes) WHERE deleted_at IS NULL.
 -- ---------------------------------------------------------------------------

@@ -25,7 +25,7 @@ from .config import settings
 from .db import check_connection
 from .logging_config import configure_logging, get_logger
 from .opencv_document_scanner import pipeline_status
-from .routers import ai_history, auth, billing, cloud, ocr, passport_photo, perfect, structure
+from .routers import ai_history, auth, billing, cloud, ocr, passport_photo, perfect, structure, wallet
 from .storage import storage_root
 
 configure_logging(settings.log_level)
@@ -152,6 +152,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 # ---------------------------------------------------------------------------
 app.include_router(auth.router)
 app.include_router(cloud.router)
+app.include_router(wallet.router)
 app.include_router(passport_photo.router)
 app.include_router(ocr.router)
 app.include_router(structure.router)

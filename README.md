@@ -28,6 +28,11 @@ Dart file it corresponds to.
 - Prism Cloud (`/cloud/*`) — account creation, storage-quota enforcement, document
   upload/list/download, backed by real MySQL rows (including the file bytes
   themselves — see `documents.file_data`).
+- Wallet card sync (`/cloud/cards`) — bank/ID/passport/license cards, including
+  the CVV, upsert/list/delete across devices. Not counted against the document
+  storage quota (a different, much smaller data domain). See "Known
+  limitations" below — the same weak account auth that applies to `/cloud/documents`
+  applies here too, and matters more given what's stored.
 - Passport-photo background replacement (`/passport-photo/process`) — real subject
   segmentation (`rembg`) composited onto solid white, with quality guardrails.
 - **Perfect OCR** (`/document/perfect/page`, `/document/perfect/book`) — takes the
@@ -139,6 +144,9 @@ Every router file documents its own contract in its module docstring. Summary:
 | POST | `/document/{format}/export` | not yet wired client-side |
 | POST | `/document/perfect/page` | `perfect_ocr_service.dart` (`processSinglePage`) — real, working |
 | POST | `/document/perfect/book` | `perfect_ocr_service.dart` (`processBook`) — real, working |
+| GET/POST | `/cloud/cards` | `wallet_cloud_service.dart` — Wallet card sync, real, working |
+| GET | `/cloud/cards/{id}/front`, `/back` | `wallet_cloud_service.dart` |
+| DELETE | `/cloud/cards/{id}` | `wallet_cloud_service.dart` |
 
 **`GET /cloud/documents/{id}/file` is new** — `PrismCloudService.downloadDocument()`
 was added to the Flutter client to call it (cross-device document download), so
@@ -188,7 +196,10 @@ backend/
   matching a row — anyone who knows (or guesses) an email can read that account's
   document list. The OTP-issued `sessionToken` (JWT) exists but isn't yet checked
   as a bearer token on the Prism Cloud endpoints. Add that before this handles
-  real user data outside your own testing.
+  real user data outside your own testing. **This applies to `/cloud/cards` too,
+  and matters more there** — full card numbers and CVVs, not just document
+  metadata. Wiring real bearer-token auth onto `/cloud/*` should happen before
+  Wallet sync is used with a real card, not just a test one.
 - `/document/{format}/export` accepts an arbitrary structured-document JSON body
   with no size cap beyond FastAPI's defaults — fine for testing, worth a limit
   before this is internet-facing.

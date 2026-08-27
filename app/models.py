@@ -10,6 +10,7 @@ import datetime as dt
 from typing import Optional
 
 from sqlalchemy import (
+    JSON,
     BigInteger,
     Boolean,
     DateTime,
@@ -136,6 +137,39 @@ class Document(Base):
     user: Mapped[User] = relationship(back_populates="documents")
 
     __table_args__ = (Index("ix_documents_user_modified", "user_id", "modified_at"),)
+
+
+class Card(Base):
+    """A Wallet card -- bank card, national ID, passport, or driving
+    license -- synced to Prism Cloud so it's available on any device.
+
+    ``card_data`` holds every non-image field (card number, holder name,
+    expiry, CVV, ID number, etc.) as one JSON object; the Flutter client
+    owns that shape (see ``lib/models/wallet_card.dart``) so this table
+    doesn't need a migration every time a field is added there.
+    """
+
+    __tablename__ = "cards"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    type: Mapped[str] = mapped_column(String(32), nullable=False)
+    card_data: Mapped[dict] = mapped_column(JSON, nullable=False)
+    front_image: Mapped[Optional[bytes]] = mapped_column(LONGBLOB, nullable=True)
+    back_image: Mapped[Optional[bytes]] = mapped_column(LONGBLOB, nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now()
+    )
+    modified_at: Mapped[dt.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+    deleted_at: Mapped[Optional[dt.datetime]] = mapped_column(DateTime, nullable=True)
+
+    user: Mapped[User] = relationship()
+
+    __table_args__ = (Index("ix_cards_user_modified", "user_id", "modified_at"),)
 
 
 class StorageUsage(Base):
