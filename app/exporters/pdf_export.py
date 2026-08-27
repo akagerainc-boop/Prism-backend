@@ -366,6 +366,7 @@ def export_clean_pdf(document: StructuredDocument, **_: object) -> bytes:
     pdf.setTitle(document.sourceFilename or "Prism document")
     pdf.setCreator("Prism Scanner backend")
 
+    total_pages = len(document.pages)
     for page in document.pages:
         page_width = page.width or _FALLBACK_SIZE[0]
         page_height = page.height or _FALLBACK_SIZE[1]
@@ -454,6 +455,14 @@ def export_clean_pdf(document: StructuredDocument, **_: object) -> bytes:
                     pdf.restoreState()
                 else:
                     pdf.drawString(x0, baseline, text)
+
+        if total_pages > 1:
+            pdf.setFont(font, 9.0)
+            pdf.setFillColorRGB(0.35, 0.35, 0.35)
+            pdf.drawCentredString(
+                page_width / 2.0, 20.0, f"Page {page.pageNumber} of {total_pages}"
+            )
+            pdf.setFillColorRGB(0, 0, 0)
 
         pdf.showPage()
 
