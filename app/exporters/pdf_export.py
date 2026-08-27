@@ -83,6 +83,49 @@ def _encodable(text: str, font: str) -> str:
     return text.encode("latin-1", "ignore").decode("latin-1")
 
 
+def _wrap_lines(pdf, text: str, font: str, size: float, max_width: float) -> list[str]:
+    """Greedy word-wrap: real multi-line layout instead of forcing the
+    whole string onto one line and squishing it to fit horizontally.
+    A single word wider than max_width is still placed as its own line
+    (better to overflow slightly than loop forever or drop it).
+    """
+    wrapped: list[str] = []
+    for raw_line in text.splitlines():
+        raw_line = raw_line.strip()
+        if not raw_line:
+            wrapped.append("")
+            continue
+        words = raw_line.split(" ")
+        current = ""
+        for word in words:
+            candidate = f"{current} {word}".strip()
+            if not current or pdf.stringWidth(candidate, font, size) <= max_width:
+                current = candidate
+            else:
+                wrapped.append(current)
+                current = word
+        if current:
+            wrapped.append(current)
+    return wrapped
+
+
+def _fit_text_block(
+    pdf, text: str, font: str, *, box_width: float, box_height: float,
+    base_size: float, min_size: float = 6.0,
+) -> tuple[list[str], float, float]:
+    """Word-wraps `text` to `box_width`, shrinking the font (not squishing
+    text horizontally) until the wrapped block's height fits `box_height`,
+    down to `min_size`. Returns (wrapped_lines, font_size, line_height).
+    """
+    size = base_size
+    while True:
+        wrapped = _wrap_lines(pdf, text, font, size, box_width)
+        line_height = size * 1.28
+        if line_height * len(wrapped) <= box_height or size <= min_size:
+            return wrapped, size, line_height
+        size = max(min_size, size - 0.5)
+
+
 def _element_lines(element: DocElement) -> list[str]:
     if element.text:
         return [line for line in element.text.splitlines() if line.strip()]
@@ -487,17 +530,28 @@ def export_clean_pdf(document: StructuredDocument, **_: object) -> bytes:
                 _draw_checkbox(pdf, checked=bool(element.checked), x0=x0, pdf_y=pdf_y, box_width=box_width, box_height=box_height)
                 continue
 
-            lines = _element_lines(element)
-            if not lines:
+            raw_text = "\n".join(_element_lines(element))
+            if not raw_text.strip():
                 continue
-            if element.type == "title":
-                size = min(24.0, max(12.0, box_height * 0.75))
-            elif element.type == "heading":
-                size = min(18.0, max(10.0, box_height * 0.72))
-            else:
-                size = min(16.0, max(6.0, box_height / max(len(lines), 1) * 0.8))
 
             font_name = _styled_font(font, bold=element.bold, italic=element.italic)
+            if element.type == "title":
+                base_size = min(24.0, max(14.0, box_height * 0.6))
+            elif element.type == "heading":
+                base_size = min(18.0, max(11.0, box_height * 0.55))
+            else:
+                # A sensible reading size, independent of the element's raw
+                # bbox height -- that height often reflects many lines of
+                # small source text (e.g. handwriting), not "one big line".
+                base_size = 11.0
+
+            lines, size, line_height = _fit_text_block(
+                pdf, raw_text, font_name,
+                box_width=box_width, box_height=box_height, base_size=base_size,
+            )
+            if not lines:
+                continue
+
             fill_rgb = _hex_to_rgb(element.color) or (0.0, 0.0, 0.0)
 
             if element.highlightColor:
@@ -508,31 +562,20 @@ def export_clean_pdf(document: StructuredDocument, **_: object) -> bytes:
 
             pdf.setFillColorRGB(*fill_rgb)
             pdf.setFont(font_name, size)
-            line_height = box_height / max(len(lines), 1)
             for line_index, raw_line in enumerate(lines):
-                text = _encodable(raw_line.strip(), font_name)
+                text = _encodable(raw_line, font_name)
                 if not text:
                     continue
                 baseline = page_height - y0 - (line_index + 0.8) * line_height
                 natural = pdf.stringWidth(text, font_name, size)
-
-                if natural > box_width:
-                    pdf.saveState()
-                    pdf.translate(x0, baseline)
-                    pdf.scale(max(box_width / natural, 0.1), 1.0)
-                    pdf.drawString(0, 0, text)
-                    pdf.restoreState()
-                    line_x0, line_width = x0, box_width
-                else:
-                    line_x0 = _aligned_x(x0, box_width, natural, element.align)
-                    pdf.drawString(line_x0, baseline, text)
-                    line_width = natural
+                line_x0 = _aligned_x(x0, box_width, natural, element.align)
+                pdf.drawString(line_x0, baseline, text)
 
                 if element.underline:
-                    pdf.line(line_x0, baseline - 1.5, line_x0 + line_width, baseline - 1.5)
+                    pdf.line(line_x0, baseline - 1.5, line_x0 + natural, baseline - 1.5)
                 if element.strikethrough:
                     strike_y = baseline + size * 0.3
-                    pdf.line(line_x0, strike_y, line_x0 + line_width, strike_y)
+                    pdf.line(line_x0, strike_y, line_x0 + natural, strike_y)
             pdf.setFillColorRGB(0, 0, 0)
 
         if total_pages > 1:
