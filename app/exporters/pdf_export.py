@@ -78,7 +78,7 @@ def _resolve_font(pdfmetrics, TTFont) -> str:
 
 def _encodable(text: str, font: str) -> str:
     """Drop characters the chosen font cannot encode, rather than failing."""
-    if font != "Helvetica":
+    if not font.startswith("Helvetica"):
         return text
     return text.encode("latin-1", "ignore").decode("latin-1")
 
@@ -89,6 +89,60 @@ def _element_lines(element: DocElement) -> list[str]:
     if element.table is not None:
         return ["  ".join(row) for row in table_rows(element.table) if any(row)]
     return []
+
+
+def _styled_font(font: str, *, bold: bool, italic: bool) -> str:
+    """Pick a bold/italic variant of the base-14 Helvetica family.
+
+    A registered Unicode TTF may not ship bold/italic variants, so styling
+    is only applied on top of Helvetica -- a custom font stays regular
+    rather than erroring on a missing variant.
+    """
+    if font != "Helvetica":
+        return font
+    if bold and italic:
+        return "Helvetica-BoldOblique"
+    if bold:
+        return "Helvetica-Bold"
+    if italic:
+        return "Helvetica-Oblique"
+    return "Helvetica"
+
+
+def _hex_to_rgb(value: str | None) -> tuple[float, float, float] | None:
+    if not value or len(value) != 7 or value[0] != "#":
+        return None
+    try:
+        r = int(value[1:3], 16) / 255.0
+        g = int(value[3:5], 16) / 255.0
+        b = int(value[5:7], 16) / 255.0
+        return (r, g, b)
+    except ValueError:
+        return None
+
+
+def _aligned_x(x0: float, box_width: float, natural_width: float, align: str | None) -> float:
+    if align == "center":
+        return x0 + max(0.0, (box_width - natural_width) / 2.0)
+    if align == "right":
+        return x0 + max(0.0, box_width - natural_width)
+    return x0
+
+
+def _draw_checkbox(
+    pdf, *, checked: bool, x0: float, pdf_y: float, box_width: float, box_height: float,
+) -> None:
+    size = max(4.0, min(box_width, box_height))
+    box_x = x0
+    box_y = pdf_y + (box_height - size) / 2.0
+    pdf.setStrokeColorRGB(0.2, 0.2, 0.2)
+    pdf.setLineWidth(1.2)
+    pdf.rect(box_x, box_y, size, size, fill=0, stroke=1)
+    if checked:
+        pdf.line(box_x + size * 0.18, box_y + size * 0.5, box_x + size * 0.42, box_y + size * 0.2)
+        pdf.line(box_x + size * 0.42, box_y + size * 0.2, box_x + size * 0.85, box_y + size * 0.8)
+    pdf.setLineWidth(1.0)
+    pdf.setStrokeColorRGB(0.55, 0.55, 0.55)
 
 
 def _draw_invisible_text(
@@ -429,6 +483,10 @@ def export_clean_pdf(document: StructuredDocument, **_: object) -> bytes:
                 )
                 continue
 
+            if element.type == "checkbox":
+                _draw_checkbox(pdf, checked=bool(element.checked), x0=x0, pdf_y=pdf_y, box_width=box_width, box_height=box_height)
+                continue
+
             lines = _element_lines(element)
             if not lines:
                 continue
@@ -438,23 +496,44 @@ def export_clean_pdf(document: StructuredDocument, **_: object) -> bytes:
                 size = min(18.0, max(10.0, box_height * 0.72))
             else:
                 size = min(16.0, max(6.0, box_height / max(len(lines), 1) * 0.8))
-            pdf.setFillColorRGB(0, 0, 0)
-            pdf.setFont(font, size)
+
+            font_name = _styled_font(font, bold=element.bold, italic=element.italic)
+            fill_rgb = _hex_to_rgb(element.color) or (0.0, 0.0, 0.0)
+
+            if element.highlightColor:
+                highlight_rgb = _hex_to_rgb(element.highlightColor)
+                if highlight_rgb:
+                    pdf.setFillColorRGB(*highlight_rgb)
+                    pdf.rect(x0, pdf_y, box_width, box_height, fill=1, stroke=0)
+
+            pdf.setFillColorRGB(*fill_rgb)
+            pdf.setFont(font_name, size)
             line_height = box_height / max(len(lines), 1)
             for line_index, raw_line in enumerate(lines):
-                text = _encodable(raw_line.strip(), font)
+                text = _encodable(raw_line.strip(), font_name)
                 if not text:
                     continue
                 baseline = page_height - y0 - (line_index + 0.8) * line_height
-                natural = pdf.stringWidth(text, font, size)
+                natural = pdf.stringWidth(text, font_name, size)
+
                 if natural > box_width:
                     pdf.saveState()
                     pdf.translate(x0, baseline)
                     pdf.scale(max(box_width / natural, 0.1), 1.0)
                     pdf.drawString(0, 0, text)
                     pdf.restoreState()
+                    line_x0, line_width = x0, box_width
                 else:
-                    pdf.drawString(x0, baseline, text)
+                    line_x0 = _aligned_x(x0, box_width, natural, element.align)
+                    pdf.drawString(line_x0, baseline, text)
+                    line_width = natural
+
+                if element.underline:
+                    pdf.line(line_x0, baseline - 1.5, line_x0 + line_width, baseline - 1.5)
+                if element.strikethrough:
+                    strike_y = baseline + size * 0.3
+                    pdf.line(line_x0, strike_y, line_x0 + line_width, strike_y)
+            pdf.setFillColorRGB(0, 0, 0)
 
         if total_pages > 1:
             pdf.setFont(font, 9.0)

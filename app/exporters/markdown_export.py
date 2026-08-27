@@ -45,15 +45,34 @@ def _table_to_markdown(element: DocElement) -> str:
     return "\n".join(lines)
 
 
+def _styled(text: str, element: DocElement) -> str:
+    """Wrap `text` in the real inline styling Perfect OCR (or any other
+    producer) reported for this element. Markdown has no native underline,
+    so that one falls back to raw HTML, which every Markdown renderer that
+    matters passes through.
+    """
+    if not text:
+        return text
+    if element.strikethrough:
+        text = f"~~{text}~~"
+    if element.underline:
+        text = f"<u>{text}</u>"
+    if element.bold:
+        text = f"**{text}**"
+    if element.italic:
+        text = f"*{text}*"
+    return text
+
+
 def _element_to_markdown(element: DocElement) -> str:
     text = (element.text or "").strip()
 
     element_type = element.type
     if element_type == "title":
-        return f"# {text}" if text else ""
+        return f"# {_styled(text, element)}" if text else ""
     if element_type == "heading":
         level = min(max(element.level or 2, 2), 6)
-        return f"{'#' * level} {text}" if text else ""
+        return f"{'#' * level} {_styled(text, element)}" if text else ""
     if element_type == "table":
         return _table_to_markdown(element)
     if element_type in ("figure", "chart"):
@@ -66,23 +85,28 @@ def _element_to_markdown(element: DocElement) -> str:
             return ""
         # Structured scanners may emit LaTeX for formula regions.
         return f"$$\n{text}\n$$"
+    if element_type == "checkbox":
+        mark = "x" if element.checked else " "
+        return f"- [{mark}] {text}" if text else f"- [{mark}]"
     if element_type == "list":
         if not text:
             return ""
         return "\n".join(
-            f"- {line.strip()}" for line in text.splitlines() if line.strip()
+            f"- {_styled(line.strip(), element)}"
+            for line in text.splitlines()
+            if line.strip()
         )
     if element_type == "caption":
         return f"*{text}*" if text else ""
     if element_type in ("footnote", "reference"):
-        return f"> {text}" if text else ""
+        return f"> {_styled(text, element)}" if text else ""
     if element_type == "seal":
         return f"_[Seal/stamp: {text}]_" if text else "_[Seal/stamp detected]_"
     if element_type in ("header", "footer"):
         # Running heads are page furniture, not document content -- they are
         # kept in the JSON model but omitted from the prose reconstruction.
         return ""
-    return text
+    return _styled(text, element)
 
 
 def _page_to_markdown(page: DocPage, *, include_page_breaks: bool) -> str:

@@ -205,6 +205,17 @@ class DocElement(BaseModel):
     sourceImage: str | None = None
     table: TableData | None = None
     level: int | None = None  # heading depth, when known
+    # Real text styling (Perfect OCR / any other producer that can report it).
+    # None/False are honest defaults -- never inferred as "probably styled".
+    bold: bool = False
+    italic: bool = False
+    underline: bool = False
+    strikethrough: bool = False
+    color: str | None = None  # "#RRGGBB"
+    highlightColor: str | None = None  # "#RRGGBB"
+    align: str | None = None  # "left" | "center" | "right"
+    # Only meaningful when type == "checkbox".
+    checked: bool | None = None
     # Optional secondary-engine cross-check fields.
     # crossValidated=True means VL's independent reading agreed closely with
     # A secondary engine's; confidence is nudged up (never to 1.0) when it does.

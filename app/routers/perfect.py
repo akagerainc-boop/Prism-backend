@@ -36,6 +36,7 @@ from __future__ import annotations
 import base64
 import datetime as dt
 import json
+import re
 import uuid
 from typing import Any
 
@@ -88,6 +89,18 @@ def _parse_elements_field(raw: str | None, *, context: str) -> Any:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"'{context}' is not valid JSON: {exc}",
         ) from exc
+
+
+_HEX_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+
+def _parse_hex_color(value: Any) -> str | None:
+    """Accepts only a well-formed "#RRGGBB" string -- anything else (a color
+    name, a malformed value, garbage) is dropped rather than guessed at.
+    """
+    if isinstance(value, str) and _HEX_COLOR_RE.match(value.strip()):
+        return value.strip()
+    return None
 
 
 def _parse_table(raw: dict) -> TableData:
@@ -155,6 +168,10 @@ def _parse_element(
         else None
     )
 
+    style = raw.get("style") if isinstance(raw.get("style"), dict) else {}
+    checked_raw = raw.get("checked")
+    checked = bool(checked_raw) if element_type == "checkbox" and checked_raw is not None else None
+
     return DocElement(
         id=uuid.uuid4().hex[:16],
         page=page_number,
@@ -167,6 +184,14 @@ def _parse_element(
         readingOrder=index,
         table=table,
         sourceImage=image_ref,
+        bold=bool(style.get("bold", False)),
+        italic=bool(style.get("italic", False)),
+        underline=bool(style.get("underline", False)),
+        strikethrough=bool(style.get("strikethrough", False)),
+        color=_parse_hex_color(style.get("color")),
+        highlightColor=_parse_hex_color(style.get("highlightColor")),
+        align=style.get("align") if style.get("align") in ("left", "center", "right") else None,
+        checked=checked,
     )
 
 

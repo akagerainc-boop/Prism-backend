@@ -58,6 +58,7 @@ ELEMENT_TYPES = (
     "number",
     "aside",
     "algorithm",
+    "checkbox",
     "other",
 )
 

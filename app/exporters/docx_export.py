@@ -26,13 +26,38 @@ def _import_docx():
     try:
         import docx  # type: ignore[import-not-found]
         from docx.enum.text import WD_ALIGN_PARAGRAPH  # type: ignore
-        from docx.shared import Inches, Pt  # type: ignore
+        from docx.shared import Inches, Pt, RGBColor  # type: ignore
 
-        return docx, WD_ALIGN_PARAGRAPH, Inches, Pt
+        return docx, WD_ALIGN_PARAGRAPH, Inches, Pt, RGBColor
     except Exception as exc:
         raise ExportUnavailable(
             "python-docx is not installed. Run `pip install python-docx`."
         ) from exc
+
+
+def _apply_run_style(paragraph, element: DocElement, RGBColor) -> None:
+    """Apply the real bold/italic/underline/strikethrough/color Perfect OCR
+    (or any other producer) reported for this element to every run just added.
+    """
+    if not (
+        element.bold or element.italic or element.underline
+        or element.strikethrough or element.color
+    ):
+        return
+    for run in paragraph.runs:
+        if element.bold:
+            run.bold = True
+        if element.italic:
+            run.italic = True
+        if element.underline:
+            run.underline = True
+        if element.strikethrough:
+            run.font.strike = True
+        if element.color:
+            try:
+                run.font.color.rgb = RGBColor.from_string(element.color.lstrip("#"))
+            except ValueError:
+                pass
 
 
 def _add_table(doc, element: DocElement, Inches) -> None:
@@ -96,7 +121,7 @@ def _add_image(doc, element: DocElement, document: StructuredDocument, Inches) -
 
 def export_docx(document: StructuredDocument, **_: object) -> bytes:
     """Render the structured document to .docx bytes."""
-    docx, WD_ALIGN_PARAGRAPH, Inches, Pt = _import_docx()
+    docx, WD_ALIGN_PARAGRAPH, Inches, Pt, RGBColor = _import_docx()
 
     doc = docx.Document()
 
@@ -110,15 +135,20 @@ def export_docx(document: StructuredDocument, **_: object) -> bytes:
             element_type = element.type
             if element_type == "title":
                 if text:
-                    doc.add_heading(text, level=0)
+                    heading = doc.add_heading(text, level=0)
+                    _apply_run_style(heading, element, RGBColor)
             elif element_type == "heading":
                 if text:
-                    doc.add_heading(text, level=min(max(element.level or 1, 1), 9))
+                    heading = doc.add_heading(text, level=min(max(element.level or 1, 1), 9))
+                    _apply_run_style(heading, element, RGBColor)
             elif element_type == "table":
                 _add_table(doc, element, Inches)
             elif element_type in ("figure", "chart"):
                 if not _add_image(doc, element, document, Inches) and text:
                     doc.add_paragraph(text)
+            elif element_type == "checkbox":
+                mark = "☑" if element.checked else "☐"  # ☑ / ☐
+                doc.add_paragraph(f"{mark} {text}".strip())
             elif element_type == "caption":
                 if text:
                     paragraph = doc.add_paragraph(text)
@@ -129,7 +159,8 @@ def export_docx(document: StructuredDocument, **_: object) -> bytes:
             elif element_type == "list":
                 for line in text.splitlines():
                     if line.strip():
-                        doc.add_paragraph(line.strip(), style="List Bullet")
+                        paragraph = doc.add_paragraph(line.strip(), style="List Bullet")
+                        _apply_run_style(paragraph, element, RGBColor)
             elif element_type == "formula":
                 if text:
                     paragraph = doc.add_paragraph(text)
@@ -145,7 +176,12 @@ def export_docx(document: StructuredDocument, **_: object) -> bytes:
                 continue  # page furniture, not body content
             else:
                 if text:
-                    doc.add_paragraph(text)
+                    paragraph = doc.add_paragraph(text)
+                    if element.align == "center":
+                        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    elif element.align == "right":
+                        paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+                    _apply_run_style(paragraph, element, RGBColor)
 
     buffer = io.BytesIO()
     doc.save(buffer)
