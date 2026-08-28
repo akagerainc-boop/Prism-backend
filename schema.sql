@@ -131,6 +131,22 @@ CREATE TABLE IF NOT EXISTS `cards` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------------
+-- scan_feedback -- "How was this scan?" prompt, shown every 5th document
+-- scanned, capped at the first 2 prompts (client-side counter).
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `scan_feedback` (
+  `id`          VARCHAR(36)  NOT NULL,
+  `user_id`     BIGINT       NOT NULL,
+  `rating`      VARCHAR(16)  NOT NULL,
+  `suggestion`  TEXT         NULL,
+  `created_at`  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `ix_scan_feedback_user` (`user_id`),
+  CONSTRAINT `fk_scan_feedback_user` FOREIGN KEY (`user_id`)
+    REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------------
 -- storage_usage -- cheap-to-read cache of consumed bytes. The authoritative
 -- value is always SUM(documents.size_bytes) WHERE deleted_at IS NULL.
 -- ---------------------------------------------------------------------------

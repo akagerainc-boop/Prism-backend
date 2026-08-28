@@ -212,6 +212,28 @@ class SyncState(Base):
     )
 
 
+class ScanFeedback(Base):
+    """One "how was this scan?" response -- the app prompts for this every
+    5th document scanned, capped at the first 2 prompts (see
+    ``lib/services/scan_feedback_tracker.dart``). ``suggestion`` is
+    optional free text.
+    """
+
+    __tablename__ = "scan_feedback"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    rating: Mapped[str] = mapped_column(String(16), nullable=False)  # perfect|good|bad|veryBad
+    suggestion: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (Index("ix_scan_feedback_user", "user_id"),)
+
+
 class StudentApplication(Base):
     """Historical record only -- the Student plan (and every paid plan) was
     removed; Prism is fully free now, so `routers/billing.py` (which wrote

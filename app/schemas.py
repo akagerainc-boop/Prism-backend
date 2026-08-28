@@ -121,6 +121,15 @@ class CardUploadResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Scan feedback -- POST /feedback
+# ---------------------------------------------------------------------------
+class ScanFeedbackBody(BaseModel):
+    email: str
+    rating: str  # "perfect" | "good" | "bad" | "veryBad"
+    suggestion: str | None = None
+
+
+# ---------------------------------------------------------------------------
 # Prism AI history -- POST /ai/history, GET /ai/history, DELETE /ai/history/{id}
 # Mirrors lib/services/chat_history_service.dart's ChatMessageRecord /
 # ChatSessionRecord exactly -- do not rename these fields.

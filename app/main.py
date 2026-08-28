@@ -30,6 +30,7 @@ from .routers import (
     auth,
     card_mfa,
     cloud,
+    feedback,
     ocr,
     passport_photo,
     perfect,
@@ -168,6 +169,7 @@ app.include_router(passport_photo.router)
 app.include_router(ocr.router)
 app.include_router(structure.router)
 app.include_router(perfect.router)
+app.include_router(feedback.router)
 app.include_router(ai_history.router)
 
 
