@@ -39,11 +39,21 @@ def process(file: UploadFile = File(...)) -> Response:
     data = file.file.read(settings.max_upload_bytes + 1)
     file.file.close()
 
+    log.info(
+        "Passport photo: request received, filename=%r content_type=%r %d bytes",
+        file.filename, file.content_type, len(data),
+    )
+
     if not data:
+        log.warning("Passport photo: rejected -- empty upload")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="No image was uploaded."
         )
     if len(data) > settings.max_upload_bytes:
+        log.warning(
+            "Passport photo: rejected -- %d bytes exceeds the %d byte limit",
+            len(data), settings.max_upload_bytes,
+        )
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
             detail="That image is too large.",
@@ -52,17 +62,22 @@ def process(file: UploadFile = File(...)) -> Response:
     try:
         processed = process_passport_photo(data)
     except ValueError as exc:
+        log.warning("Passport photo: rejected -- unreadable upload: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
         ) from exc
     except SegmentationFailed as exc:
         # Deliberately an error, not a best-effort image: the client falls back
         # to the locally-edited photo, which beats returning something garbled.
+        # (The specific guardrail that tripped is already logged with its
+        # actual computed values inside process_passport_photo -- this is
+        # just the request-level summary.)
+        log.info("Passport photo: 422 SegmentationFailed: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
         ) from exc
     except SegmentationUnavailable as exc:
-        log.error("Passport segmentation unavailable: %s", exc)
+        log.error("Passport photo: 503 SegmentationUnavailable: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
         ) from exc

@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import io
 import threading
+import time
 from typing import Any
 
 from PIL import Image, ImageOps
@@ -167,8 +168,19 @@ def process_passport_photo(data: bytes) -> bytes:
             falls back to the locally-edited photo rather than showing a
             garbled one.
     """
+    request_started = time.monotonic()
     image = _load_image(data)
+    log.info(
+        "Passport photo: loaded image %dx%d (%d bytes uploaded)",
+        image.width, image.height, len(data),
+    )
+
+    session_started = time.monotonic()
     session = _get_session()
+    log.info(
+        "Passport photo: rembg session ready in %.2fs (model=%s)",
+        time.monotonic() - session_started, settings.rembg_model,
+    )
 
     # Segment/matte at a fixed working resolution -- see
     # _MATTING_WORKING_MAX_DIM's comment for why -- then upscale the result
@@ -181,9 +193,14 @@ def process_passport_photo(data: bytes) -> bytes:
             (max(1, round(image.width * scale)), max(1, round(image.height * scale))),
             Image.Resampling.LANCZOS,
         )
+        log.info(
+            "Passport photo: downscaled to %dx%d for matting (from %dx%d)",
+            working_image.width, working_image.height, image.width, image.height,
+        )
     else:
         working_image = image
 
+    matting_started = time.monotonic()
     try:
         from rembg import remove  # type: ignore[import-not-found]
 
@@ -206,14 +223,30 @@ def process_passport_photo(data: bytes) -> bytes:
             post_process_mask=True,
         )
     except Exception as exc:
+        # Log the REAL underlying exception -- type, message, and full
+        # traceback -- before replacing it with the generic client-facing
+        # SegmentationUnavailable. Without this, an OOM kill, a pymatting
+        # numerical failure, or any other genuine crash inside remove() was
+        # completely invisible in the logs; only the generic message
+        # survived, giving no way to tell "briefly overloaded" apart from
+        # "will never work" or "specific bug in this exact photo".
+        log.exception(
+            "Passport photo: segmentation raised %s after %.2fs: %s",
+            type(exc).__name__, time.monotonic() - matting_started, exc,
+        )
         raise SegmentationUnavailable(
             "Background segmentation failed to run."
         ) from exc
+
+    log.info(
+        "Passport photo: matting completed in %.2fs", time.monotonic() - matting_started,
+    )
 
     if not isinstance(cutout, Image.Image):  # pragma: no cover - defensive
         try:
             cutout = Image.open(io.BytesIO(cutout))
         except Exception as exc:
+            log.exception("Passport photo: rembg returned an unusable result: %s", exc)
             raise SegmentationFailed("Segmentation returned an unusable result.") from exc
 
     cutout = cutout.convert("RGBA")
@@ -223,20 +256,38 @@ def process_passport_photo(data: bytes) -> bytes:
     mask = cutout.getchannel("A")
 
     foreground_ratio, ambiguous_ratio = _mask_quality(mask)
+    log.info(
+        "Passport photo: foreground_ratio=%.3f ambiguous_ratio=%.3f "
+        "(min=%.3f max=%.3f)",
+        foreground_ratio, ambiguous_ratio,
+        settings.passport_min_subject_ratio, settings.passport_max_subject_ratio,
+    )
 
     # Guard rails: an empty mask (nobody found) or a near-full mask (the model
     # decided the whole frame is subject) would both produce a useless photo.
     if foreground_ratio < settings.passport_min_subject_ratio:
+        log.warning(
+            "Passport photo: rejected -- foreground_ratio %.3f below minimum %.3f",
+            foreground_ratio, settings.passport_min_subject_ratio,
+        )
         raise SegmentationFailed(
             "No clear subject was found in the photo. Retake it with the face "
             "filling more of the frame."
         )
     if foreground_ratio > settings.passport_max_subject_ratio:
+        log.warning(
+            "Passport photo: rejected -- foreground_ratio %.3f above maximum %.3f",
+            foreground_ratio, settings.passport_max_subject_ratio,
+        )
         raise SegmentationFailed(
             "The background couldn't be separated from the subject. Retake the "
             "photo against a plainer, more contrasting background."
         )
     if ambiguous_ratio > 0.35:
+        log.warning(
+            "Passport photo: rejected -- ambiguous_ratio %.3f above 0.35",
+            ambiguous_ratio,
+        )
         raise SegmentationFailed(
             "The subject outline is too indistinct to cut out cleanly. Retake "
             "the photo with more even lighting."
@@ -250,6 +301,7 @@ def process_passport_photo(data: bytes) -> bytes:
     canvas.paste(cutout.convert("RGB"), (0, 0), mask)
 
     if not _corner_background_ok(canvas):
+        log.warning("Passport photo: rejected -- corners of the composite weren't white")
         raise SegmentationFailed(
             "The background wasn't fully removed at the photo's edges. Retake "
             "the photo with the subject centred and more margin around them."
@@ -265,9 +317,12 @@ def process_passport_photo(data: bytes) -> bytes:
     )
 
     log.info(
-        "Passport photo processed (%dx%d, subject=%.1f%%)",
+        "Passport photo processed (%dx%d, subject=%.1f%%, %d bytes out, "
+        "total %.2fs)",
         image.width,
         image.height,
         foreground_ratio * 100,
+        buffer.tell(),
+        time.monotonic() - request_started,
     )
     return buffer.getvalue()
