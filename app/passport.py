@@ -1,19 +1,30 @@
 """Passport-photo background replacement.
 
-Product requirement, verbatim: *"just make python codes just it will delete user
-background and make it white clear white of a cloth but a white"* -- i.e. segment
-the person out and drop them onto a clean, solid white backdrop (as if they were
-shot against a white cloth). The result is **opaque white**, never transparency:
-passport specifications require a plain light background, and a transparent PNG
-would print black on most pipelines.
+Product requirement: segment the person out (hair, ears, shoulders, neck,
+clothing -- the *whole* silhouette, not just a face crop) and drop them onto
+a clean, solid #FFFFFF backdrop, as if shot in front of a professional white
+studio background. The result is **opaque white**, never transparency:
+passport specifications require a plain light background, and a transparent
+PNG would print black on most pipelines.
 
-Implementation: ``rembg`` (``u2net_human_seg`` by default -- the portrait-tuned
-model) produces the subject mask, then Pillow composites the original pixels
-over a solid #FFFFFF canvas at the original dimensions.
+Pipeline: ``rembg`` (``u2net_human_seg`` by default -- the portrait-tuned
+model) locates the subject, then **real closed-form alpha matting**
+(``rembg``'s ``alpha_matting=True``, backed by ``pymatting``) refines a
+continuous, sub-pixel alpha channel from that coarse mask -- this is what
+actually captures individual hair strands and soft/semi-transparent edges,
+and its foreground-colour estimation step is what prevents a visible
+background-colour halo around hair. A plain segmentation mask (the previous
+implementation here) cannot do either of those; it can only produce a hard
+or near-hard edge.
 
-``rembg``/``onnxruntime`` are imported lazily so the rest of the API still boots
-when they are not installed (see README: they may not have wheels for the
-Python version in use).
+**Important:** ``only_mask=True`` (the old approach) silently *disables*
+``alpha_matting`` inside rembg's own ``remove()`` -- the two are mutually
+exclusive in rembg's implementation, not merely independent options. That
+combination is why the old code never actually benefited from matting.
+
+``rembg``/``onnxruntime``/``pymatting`` are imported lazily so the rest of
+the API still boots when they are not installed (see README: they may not
+have wheels for the Python version in use).
 """
 
 from __future__ import annotations
@@ -57,8 +68,8 @@ def _get_session() -> Any:
         except Exception as exc:  # ImportError, or onnxruntime load failure
             raise SegmentationUnavailable(
                 "rembg is not available. Install it with "
-                "`pip install rembg onnxruntime` (see README -- it needs a "
-                "Python version with onnxruntime wheels)."
+                "`pip install rembg onnxruntime pymatting` (see README -- it "
+                "needs a Python version with onnxruntime wheels)."
             ) from exc
 
         try:
@@ -91,24 +102,56 @@ def _load_image(data: bytes) -> Image.Image:
 
 
 def _mask_quality(mask: Image.Image) -> tuple[float, float]:
-    """Return (confident-foreground ratio, ambiguous ratio) for an 'L' mask."""
+    """Return (confident-foreground ratio, ambiguous ratio) for an 'L' mask.
+
+    With a real alpha matte (as opposed to a coarse binary mask), the
+    "ambiguous" band is exactly where it should be: soft hair/edge pixels
+    with a genuine partial-transparency value, not model uncertainty.
+    """
     histogram = mask.histogram()
     total = sum(histogram) or 1
     foreground = sum(histogram[200:])  # confidently subject
-    ambiguous = sum(histogram[64:200])  # neither clearly subject nor background
+    ambiguous = sum(histogram[64:200])  # soft edges (hair, semi-transparent)
     return foreground / total, ambiguous / total
 
 
+def _corner_background_ok(canvas: Image.Image, patch: int = 14, tolerance: int = 14) -> bool:
+    """Quality-control check (spec: "ensure the background is exactly or
+    visually close to pure white"): sample each of the composited image's
+    four corners -- reliably background in any properly framed passport
+    photo -- and confirm compositing actually produced white there, not
+    leftover subject/background pixels that escaped segmentation.
+    """
+    width, height = canvas.size
+    patch = max(1, min(patch, width // 4, height // 4))
+    corners = [
+        (0, 0, patch, patch),
+        (width - patch, 0, width, patch),
+        (0, height - patch, patch, height),
+        (width - patch, height - patch, width, height),
+    ]
+    for box in corners:
+        # Box-filter the corner patch down to one pixel -- a cheap average
+        # that tolerates a few stray noisy/anti-aliased pixels.
+        averaged = canvas.crop(box).resize((1, 1), Image.Resampling.BOX)
+        r, g, b = averaged.getpixel((0, 0))[:3]
+        if 255 - min(r, g, b) > tolerance:
+            return False
+    return True
+
+
 def process_passport_photo(data: bytes) -> bytes:
-    """Segment the subject and composite it onto solid white.
+    """Segment the subject with real alpha matting and composite onto
+    solid white.
 
     Returns encoded JPEG bytes at the original image dimensions.
 
     Raises:
         ValueError: the upload is not a readable image.
-        SegmentationUnavailable: rembg/onnxruntime missing (-> 503).
-        SegmentationFailed: the mask is implausible (-> 422); the client falls
-            back to the locally-edited photo rather than showing a garbled one.
+        SegmentationUnavailable: rembg/onnxruntime/pymatting missing (-> 503).
+        SegmentationFailed: the result is implausible (-> 422); the client
+            falls back to the locally-edited photo rather than showing a
+            garbled one.
     """
     image = _load_image(data)
     session = _get_session()
@@ -116,12 +159,22 @@ def process_passport_photo(data: bytes) -> bytes:
     try:
         from rembg import remove  # type: ignore[import-not-found]
 
-        # only_mask -> a single-channel subject mask we composite ourselves,
-        # which keeps full control of the background colour.
-        mask = remove(
+        # alpha_matting=True: closed-form matting (pymatting) refines the
+        # coarse u2net mask into a real, continuous alpha channel, with its
+        # own foreground-colour estimation to stop background colour from
+        # bleeding into semi-transparent hair pixels (the actual cause of a
+        # visible halo). NOT combined with only_mask -- rembg's remove()
+        # silently ignores alpha_matting when only_mask=True, so requesting
+        # the raw mask and matting at once is not possible; the RGBA cutout
+        # below carries both the matte (alpha channel) and the
+        # colour-corrected foreground (RGB channels) together.
+        cutout = remove(
             image,
             session=session,
-            only_mask=True,
+            alpha_matting=True,
+            alpha_matting_foreground_threshold=240,
+            alpha_matting_background_threshold=10,
+            alpha_matting_erode_size=10,
             post_process_mask=True,
         )
     except Exception as exc:
@@ -129,15 +182,17 @@ def process_passport_photo(data: bytes) -> bytes:
             "Background segmentation failed to run."
         ) from exc
 
-    if not isinstance(mask, Image.Image):  # pragma: no cover - defensive
+    if not isinstance(cutout, Image.Image):  # pragma: no cover - defensive
         try:
-            mask = Image.open(io.BytesIO(mask))
+            cutout = Image.open(io.BytesIO(cutout))
         except Exception as exc:
-            raise SegmentationFailed("Segmentation returned an unusable mask.") from exc
+            raise SegmentationFailed("Segmentation returned an unusable result.") from exc
 
-    mask = mask.convert("L")
-    if mask.size != image.size:
-        mask = mask.resize(image.size, Image.Resampling.LANCZOS)
+    cutout = cutout.convert("RGBA")
+    if cutout.size != image.size:
+        cutout = cutout.resize(image.size, Image.Resampling.LANCZOS)
+
+    mask = cutout.getchannel("A")
 
     foreground_ratio, ambiguous_ratio = _mask_quality(mask)
 
@@ -160,7 +215,17 @@ def process_passport_photo(data: bytes) -> bytes:
         )
 
     canvas = Image.new("RGB", image.size, WHITE)
-    canvas.paste(image, (0, 0), mask)
+    # Composite the matte's own foreground-colour-corrected RGB, not the
+    # original pixels -- pasting the original through a soft alpha would
+    # let the original background colour bleed through translucent hair
+    # pixels, producing exactly the halo the matting step is meant to avoid.
+    canvas.paste(cutout.convert("RGB"), (0, 0), mask)
+
+    if not _corner_background_ok(canvas):
+        raise SegmentationFailed(
+            "The background wasn't fully removed at the photo's edges. Retake "
+            "the photo with the subject centred and more margin around them."
+        )
 
     buffer = io.BytesIO()
     canvas.save(
