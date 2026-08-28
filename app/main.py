@@ -131,10 +131,25 @@ async def http_exception_handler(
     if not isinstance(detail, str):
         detail = str(detail) if detail else "Request failed."
 
+    # "There was an error parsing the body" happens inside Starlette's own
+    # multipart parser, before any route code (or its logging) ever runs --
+    # the request's own headers are the only thing left to log for it. In
+    # particular Content-Length here is what the client CLAIMED to send;
+    # comparing it across repeated failures (same size every time? growing?
+    # random?) is the only diagnostic thread available for this one, since
+    # how many bytes actually arrived before the parse failed isn't
+    # observable from here.
+    extra = ""
+    if "parsing the body" in detail:
+        extra = " [Content-Length=%r Content-Type=%r]" % (
+            request.headers.get("content-length"),
+            request.headers.get("content-type"),
+        )
+
     if exc.status_code >= 500:
-        log.error("%s %s -> %s: %s", request.method, request.url.path, exc.status_code, detail)
+        log.error("%s %s -> %s: %s%s", request.method, request.url.path, exc.status_code, detail, extra)
     else:
-        log.info("%s %s -> %s: %s", request.method, request.url.path, exc.status_code, detail)
+        log.info("%s %s -> %s: %s%s", request.method, request.url.path, exc.status_code, detail, extra)
 
     return JSONResponse(
         status_code=exc.status_code,
