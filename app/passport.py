@@ -42,6 +42,20 @@ log = get_logger(__name__)
 
 WHITE = (255, 255, 255)
 
+# alpha_matting_erode_size is a FIXED PIXEL COUNT, not proportional to image
+# size. A modern phone photo is routinely 3000-4000px+ on its long edge; at
+# that scale, eroding by 10px barely shrinks the confident foreground/
+# background regions at all, leaving almost no "unknown" band for the
+# matting solver to actually work in -- so it degrades toward the original
+# hard-ish mask rather than producing a real soft matte, which is exactly
+# the kind of bad-background/odd-cut artifact this is meant to prevent.
+# Segmenting at a fixed, moderate working resolution keeps the erode size
+# (and thresholds) proportionally meaningful regardless of the source
+# photo's resolution, and is dramatically cheaper to run to boot -- the
+# final composite still happens at the original resolution (the cutout is
+# upscaled back before compositing), so output quality isn't reduced.
+_MATTING_WORKING_MAX_DIM = 1400
+
 _session: Any = None
 _session_lock = threading.Lock()
 
@@ -156,6 +170,20 @@ def process_passport_photo(data: bytes) -> bytes:
     image = _load_image(data)
     session = _get_session()
 
+    # Segment/matte at a fixed working resolution -- see
+    # _MATTING_WORKING_MAX_DIM's comment for why -- then upscale the result
+    # back to the original size below, before the guardrail checks and the
+    # final composite.
+    longest_edge = max(image.size)
+    if longest_edge > _MATTING_WORKING_MAX_DIM:
+        scale = _MATTING_WORKING_MAX_DIM / longest_edge
+        working_image = image.resize(
+            (max(1, round(image.width * scale)), max(1, round(image.height * scale))),
+            Image.Resampling.LANCZOS,
+        )
+    else:
+        working_image = image
+
     try:
         from rembg import remove  # type: ignore[import-not-found]
 
@@ -169,7 +197,7 @@ def process_passport_photo(data: bytes) -> bytes:
         # below carries both the matte (alpha channel) and the
         # colour-corrected foreground (RGB channels) together.
         cutout = remove(
-            image,
+            working_image,
             session=session,
             alpha_matting=True,
             alpha_matting_foreground_threshold=240,
