@@ -13,6 +13,7 @@ the Android emulator's alias for the host machine, so the server must listen on
 
 from __future__ import annotations
 
+import threading
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, status
@@ -25,6 +26,7 @@ from .config import settings
 from .db import check_connection
 from .logging_config import configure_logging, get_logger
 from .opencv_document_scanner import pipeline_status
+from .passport import warm_up_session
 from .routers import (
     ai_history,
     auth,
@@ -76,6 +78,16 @@ async def lifespan(app: FastAPI):
             "SMTP_APP_PASSWORD is not set -- OTP emails will fail. Set it in "
             "backend/.env, or set SMTP_DEV_MODE=true to log codes instead."
         )
+
+    # Load the rembg model now, in the background, instead of lazily on
+    # whoever's passport-photo request happens to arrive first. Render's
+    # disk is wiped on every deploy, so this download can be slow on a
+    # fresh instance -- a background thread means it doesn't block the
+    # server from binding its port / passing Render's health check, but it
+    # also means it's already warm (or close to it) by the time a real
+    # request needs it, instead of that request silently hanging. See
+    # passport.warm_up_session's docstring for the full rationale.
+    threading.Thread(target=warm_up_session, name="rembg-warmup", daemon=True).start()
 
     yield
     log.info("Shutting down %s", settings.app_name)

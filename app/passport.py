@@ -99,6 +99,29 @@ def _get_session() -> Any:
         return _session
 
 
+def warm_up_session() -> None:
+    """Load (and, on a cold instance, download) the rembg model once, up
+    front, instead of lazily on whoever's request happens to arrive first.
+
+    Render's filesystem is ephemeral -- wiped on every deploy -- so the
+    model weights (~176MB) can end up re-downloading from scratch on the
+    first request after every single deploy. Left lazy, that download (plus
+    the CPU-bound session setup) happens inside a real user's request and
+    can easily outlast any reasonable timeout, which is exactly what
+    produced silent, log-free hangs after "loaded image" and nothing else.
+    Call this from a background thread at server startup (see main.py's
+    lifespan) so a slow first load happens once, at deploy time, with
+    nobody waiting on it -- not inside a user-facing request.
+    """
+    try:
+        _get_session()
+    except SegmentationUnavailable as exc:
+        # Not fatal to the whole server -- every other feature still works.
+        # The passport-photo endpoint itself will raise the same error (and
+        # log it) on first real use, same as before this warm-up existed.
+        log.error("Passport photo: warm-up could not load the rembg model: %s", exc)
+
+
 def _load_image(data: bytes) -> Image.Image:
     try:
         image = Image.open(io.BytesIO(data))
