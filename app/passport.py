@@ -7,24 +7,31 @@ studio background. The result is **opaque white**, never transparency:
 passport specifications require a plain light background, and a transparent
 PNG would print black on most pipelines.
 
-Pipeline: ``rembg`` (``u2net_human_seg`` by default -- the portrait-tuned
-model) locates the subject, then **real closed-form alpha matting**
-(``rembg``'s ``alpha_matting=True``, backed by ``pymatting``) refines a
-continuous, sub-pixel alpha channel from that coarse mask -- this is what
-actually captures individual hair strands and soft/semi-transparent edges,
-and its foreground-colour estimation step is what prevents a visible
-background-colour halo around hair. A plain segmentation mask (the previous
-implementation here) cannot do either of those; it can only produce a hard
-or near-hard edge.
+Pipeline: ``rembg`` (``u2net_human_seg`` -- the portrait-tuned model)
+segments the subject into a mask, a light Gaussian blur softens the mask's
+edge (cheap "feathering" -- avoids a harsh, jagged pixel-stair cutout without
+the cost of real alpha matting), then that mask composites the original
+photo onto solid white.
 
-**Important:** ``only_mask=True`` (the old approach) silently *disables*
-``alpha_matting`` inside rembg's own ``remove()`` -- the two are mutually
-exclusive in rembg's implementation, not merely independent options. That
-combination is why the old code never actually benefited from matting.
+**Deliberately lightweight, not maximum-precision.** An earlier version of
+this used real closed-form alpha matting (``rembg``'s ``alpha_matting=True``,
+backed by ``pymatting``) for genuinely better hair-strand-level edges. It
+also measured 6+ seconds for the matting step ALONE on a small, easy test
+image on a fast local machine -- on Render's shared, resource-limited CPU,
+that cost (on top of model load / cold start) was landing this feature in
+request-timeout/hang territory more than it was landing clean photos. This
+version trades some edge precision (a few pixels of soft blur, not a true
+per-strand alpha matte -- and unlike real matting, a blurred mask alone
+doesn't correct for background colour bleeding into that soft band, so a
+faint colour fringe at the edge is possible, especially against a strongly
+coloured background) for being dramatically cheaper to run and much less
+likely to time out. If you want the higher-precision version back, the
+matting approach is straightforward to reintroduce; it's the trade-off that
+changed, not a mistake in either version.
 
-``rembg``/``onnxruntime``/``pymatting`` are imported lazily so the rest of
-the API still boots when they are not installed (see README: they may not
-have wheels for the Python version in use).
+``rembg``/``onnxruntime`` are imported lazily so the rest of the API still
+boots when they are not installed (see README: they may not have wheels for
+the Python version in use).
 """
 
 from __future__ import annotations
@@ -34,7 +41,7 @@ import threading
 import time
 from typing import Any
 
-from PIL import Image, ImageOps
+from PIL import Image, ImageFilter, ImageOps
 
 from .config import settings
 from .logging_config import get_logger
@@ -43,19 +50,20 @@ log = get_logger(__name__)
 
 WHITE = (255, 255, 255)
 
-# alpha_matting_erode_size is a FIXED PIXEL COUNT, not proportional to image
-# size. A modern phone photo is routinely 3000-4000px+ on its long edge; at
-# that scale, eroding by 10px barely shrinks the confident foreground/
-# background regions at all, leaving almost no "unknown" band for the
-# matting solver to actually work in -- so it degrades toward the original
-# hard-ish mask rather than producing a real soft matte, which is exactly
-# the kind of bad-background/odd-cut artifact this is meant to prevent.
-# Segmenting at a fixed, moderate working resolution keeps the erode size
-# (and thresholds) proportionally meaningful regardless of the source
-# photo's resolution, and is dramatically cheaper to run to boot -- the
-# final composite still happens at the original resolution (the cutout is
-# upscaled back before compositing), so output quality isn't reduced.
-_MATTING_WORKING_MAX_DIM = 1400
+# Segmenting at a fixed, moderate working resolution regardless of the
+# source photo's actual size keeps this fast and its memory use bounded on
+# Render's limited CPU/RAM -- a modern phone photo can be 3000-4000px+ on
+# its long edge, and u2net's own accuracy doesn't meaningfully improve past
+# a much lower resolution anyway (its internal inference size is far
+# smaller than this). The final composite still happens at the original
+# resolution (the mask is upscaled back before compositing), so output
+# quality isn't reduced.
+_SEGMENTATION_WORKING_MAX_DIM = 1400
+
+# Gaussian blur radius (px, at the working resolution above) used to
+# feather the mask edge -- cheap insurance against a hard/jagged cutout,
+# nowhere near the cost of real alpha matting.
+_FEATHER_RADIUS = 2.5
 
 _session: Any = None
 _session_lock = threading.Lock()
@@ -83,7 +91,7 @@ def _get_session() -> Any:
         except Exception as exc:  # ImportError, or onnxruntime load failure
             raise SegmentationUnavailable(
                 "rembg is not available. Install it with "
-                "`pip install rembg onnxruntime pymatting` (see README -- it "
+                "`pip install rembg onnxruntime` (see README -- it "
                 "needs a Python version with onnxruntime wheels)."
             ) from exc
 
@@ -142,9 +150,11 @@ def _load_image(data: bytes) -> Image.Image:
 def _mask_quality(mask: Image.Image) -> tuple[float, float]:
     """Return (confident-foreground ratio, ambiguous ratio) for an 'L' mask.
 
-    With a real alpha matte (as opposed to a coarse binary mask), the
-    "ambiguous" band is exactly where it should be: soft hair/edge pixels
-    with a genuine partial-transparency value, not model uncertainty.
+    "Ambiguous" here is the feathered edge band plus any genuine model
+    uncertainty -- with the lightweight blur-feather approach (not real
+    alpha matting) the two aren't distinguishable from the mask alone, but
+    the same ratios still work as a sanity check: a huge ambiguous band
+    means segmentation itself was poor, not just that edges are soft.
     """
     histogram = mask.histogram()
     total = sum(histogram) or 1
@@ -179,14 +189,15 @@ def _corner_background_ok(canvas: Image.Image, patch: int = 14, tolerance: int =
 
 
 def process_passport_photo(data: bytes) -> bytes:
-    """Segment the subject with real alpha matting and composite onto
+    """Segment the subject (lightweight: mask + blur-feather, not full
+    alpha matting -- see the module docstring for why) and composite onto
     solid white.
 
     Returns encoded JPEG bytes at the original image dimensions.
 
     Raises:
         ValueError: the upload is not a readable image.
-        SegmentationUnavailable: rembg/onnxruntime/pymatting missing (-> 503).
+        SegmentationUnavailable: rembg/onnxruntime missing (-> 503).
         SegmentationFailed: the result is implausible (-> 422); the client
             falls back to the locally-edited photo rather than showing a
             garbled one.
@@ -205,78 +216,76 @@ def process_passport_photo(data: bytes) -> bytes:
         time.monotonic() - session_started, settings.rembg_model,
     )
 
-    # Segment/matte at a fixed working resolution -- see
-    # _MATTING_WORKING_MAX_DIM's comment for why -- then upscale the result
-    # back to the original size below, before the guardrail checks and the
-    # final composite.
+    # Segment at a fixed working resolution -- see
+    # _SEGMENTATION_WORKING_MAX_DIM's comment for why -- then upscale the
+    # mask back to the original size below, before the guardrail checks and
+    # the final composite (which uses the ORIGINAL full-resolution photo).
     longest_edge = max(image.size)
-    if longest_edge > _MATTING_WORKING_MAX_DIM:
-        scale = _MATTING_WORKING_MAX_DIM / longest_edge
+    if longest_edge > _SEGMENTATION_WORKING_MAX_DIM:
+        scale = _SEGMENTATION_WORKING_MAX_DIM / longest_edge
         working_image = image.resize(
             (max(1, round(image.width * scale)), max(1, round(image.height * scale))),
             Image.Resampling.LANCZOS,
         )
         log.info(
-            "Passport photo: downscaled to %dx%d for matting (from %dx%d)",
+            "Passport photo: downscaled to %dx%d for segmentation (from %dx%d)",
             working_image.width, working_image.height, image.width, image.height,
         )
     else:
         working_image = image
 
-    matting_started = time.monotonic()
+    segmentation_started = time.monotonic()
     try:
         from rembg import remove  # type: ignore[import-not-found]
 
-        # alpha_matting=True: closed-form matting (pymatting) refines the
-        # coarse u2net mask into a real, continuous alpha channel, with its
-        # own foreground-colour estimation to stop background colour from
-        # bleeding into semi-transparent hair pixels (the actual cause of a
-        # visible halo). NOT combined with only_mask -- rembg's remove()
-        # silently ignores alpha_matting when only_mask=True, so requesting
-        # the raw mask and matting at once is not possible; the RGBA cutout
-        # below carries both the matte (alpha channel) and the
-        # colour-corrected foreground (RGB channels) together.
-        cutout = remove(
+        # only_mask=True: a single-channel subject mask, not a full RGBA
+        # cutout -- this is the fast path (no alpha-matting solve). We
+        # composite the ORIGINAL image through this mask ourselves below,
+        # after feathering its edge with a cheap Gaussian blur.
+        mask = remove(
             working_image,
             session=session,
-            alpha_matting=True,
-            alpha_matting_foreground_threshold=240,
-            alpha_matting_background_threshold=10,
-            alpha_matting_erode_size=10,
+            only_mask=True,
             post_process_mask=True,
         )
     except Exception as exc:
         # Log the REAL underlying exception -- type, message, and full
         # traceback -- before replacing it with the generic client-facing
-        # SegmentationUnavailable. Without this, an OOM kill, a pymatting
-        # numerical failure, or any other genuine crash inside remove() was
-        # completely invisible in the logs; only the generic message
-        # survived, giving no way to tell "briefly overloaded" apart from
-        # "will never work" or "specific bug in this exact photo".
+        # SegmentationUnavailable. Without this, an OOM kill or any other
+        # genuine crash inside remove() was completely invisible in the
+        # logs; only the generic message survived, giving no way to tell
+        # "briefly overloaded" apart from "will never work" or "specific
+        # bug in this exact photo".
         log.exception(
             "Passport photo: segmentation raised %s after %.2fs: %s",
-            type(exc).__name__, time.monotonic() - matting_started, exc,
+            type(exc).__name__, time.monotonic() - segmentation_started, exc,
         )
         raise SegmentationUnavailable(
             "Background segmentation failed to run."
         ) from exc
 
     log.info(
-        "Passport photo: matting completed in %.2fs", time.monotonic() - matting_started,
+        "Passport photo: segmentation completed in %.2fs",
+        time.monotonic() - segmentation_started,
     )
 
-    if not isinstance(cutout, Image.Image):  # pragma: no cover - defensive
+    if not isinstance(mask, Image.Image):  # pragma: no cover - defensive
         try:
-            cutout = Image.open(io.BytesIO(cutout))
+            mask = Image.open(io.BytesIO(mask))
         except Exception as exc:
-            log.exception("Passport photo: rembg returned an unusable result: %s", exc)
+            log.exception("Passport photo: rembg returned an unusable mask: %s", exc)
             raise SegmentationFailed("Segmentation returned an unusable result.") from exc
 
-    cutout = cutout.convert("RGBA")
-    if cutout.size != image.size:
-        cutout = cutout.resize(image.size, Image.Resampling.LANCZOS)
+    mask = mask.convert("L")
+    if mask.size != image.size:
+        mask = mask.resize(image.size, Image.Resampling.LANCZOS)
 
-    mask = cutout.getchannel("A")
+    # Cheap feathering: softens the mask edge so the cutout isn't a harsh,
+    # jagged pixel-stair line, without the cost of real alpha matting. See
+    # the module docstring for the honest trade-off (a faint colour fringe
+    # is possible in this soft band, since -- unlike real matting -- this
+    # doesn't correct for background colour bleeding into it).
+    mask = mask.filter(ImageFilter.GaussianBlur(radius=_FEATHER_RADIUS))
 
     foreground_ratio, ambiguous_ratio = _mask_quality(mask)
     log.info(
@@ -317,11 +326,14 @@ def process_passport_photo(data: bytes) -> bytes:
         )
 
     canvas = Image.new("RGB", image.size, WHITE)
-    # Composite the matte's own foreground-colour-corrected RGB, not the
-    # original pixels -- pasting the original through a soft alpha would
-    # let the original background colour bleed through translucent hair
-    # pixels, producing exactly the halo the matting step is meant to avoid.
-    canvas.paste(cutout.convert("RGB"), (0, 0), mask)
+    # Composite the ORIGINAL full-resolution photo through the (feathered)
+    # mask -- there's no separate colour-corrected cutout in this
+    # lightweight approach, just a mask, so the original pixels are what
+    # there is to paste. See the module docstring: this is the one place
+    # the lighter approach genuinely gives something up versus real alpha
+    # matting -- a faint background-colour fringe is possible in the
+    # feathered band, since nothing here decontaminates it.
+    canvas.paste(image, (0, 0), mask)
 
     if not _corner_background_ok(canvas):
         log.warning("Passport photo: rejected -- corners of the composite weren't white")
