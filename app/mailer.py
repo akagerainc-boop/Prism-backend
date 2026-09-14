@@ -26,7 +26,7 @@ import json
 import urllib.error
 import urllib.request
 from email.message import EmailMessage
-from email.utils import formataddr, make_msgid
+from email.utils import formataddr, make_msgid, parseaddr
 
 from .config import settings
 from .logging_config import get_logger
@@ -47,7 +47,7 @@ def _build_message(
 
     msg = EmailMessage()
 
-    msg["Subject"] = f"{otp} is your Prism verification code"
+    msg["Subject"] = f"{otp} is your Docs Scanner verification code"
 
     msg["From"] = formataddr(
         (
@@ -58,7 +58,14 @@ def _build_message(
 
     msg["To"] = to_email
 
-    msg["Message-ID"] = make_msgid(domain="prism.app")
+    # The domain here should be the ACTUAL sending domain, not an arbitrary
+    # placeholder -- Gmail and other spam filters treat a Message-ID whose
+    # domain doesn't match (or relate to) the From/sending domain as a
+    # spoofing signal, which pushes a message toward spam. Falls back to
+    # the SMTP host's domain when email_from isn't set (SMTP path).
+    _, sender_address = parseaddr(settings.email_from or settings.smtp_user)
+    msgid_domain = sender_address.split("@")[-1] if "@" in sender_address else "localhost"
+    msg["Message-ID"] = make_msgid(domain=msgid_domain)
 
     # Helps Gmail/Apple surface the code in notifications.
     msg["X-Entity-Ref-ID"] = otp
@@ -67,7 +74,7 @@ def _build_message(
 
     # Plain-text version
     msg.set_content(
-        f"Your Prism verification code is {otp}\n\n"
+        f"Your Docs Scanner verification code is {otp}\n\n"
         f"It expires in {ttl_minutes} minutes and can only be used once.\n\n"
         "If you didn't request this code, you can safely ignore this email -- "
         "someone may have typed your address by mistake.\n\n"
