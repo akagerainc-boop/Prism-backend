@@ -1,0 +1,25 @@
+# Render Blueprint for the admin dashboard ONLY.
+#
+# The API service (this repo's root) is already deployed on Render as a
+# manually-created Web Service — it is deliberately NOT redefined here, so
+# connecting this Blueprint can't create a duplicate/conflicting copy of it.
+# This file exists purely so the admin dashboard can be spun up the same
+# way: Render dashboard -> New -> Blueprint -> select this repo -> it finds
+# the one service below. Manual setup works just as well — see
+# backend/README.md ("Deploying to Render").
+services:
+  - type: web
+    name: docs-scanner-admin
+    runtime: static
+    rootDir: admin
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_API_BASE_URL
+        value: https://prism-backend-9hjw.onrender.com
+    routes:
+      # React Router client-side routing -- every path must fall back to
+      # index.html, or a hard refresh on e.g. /users 404s at the CDN edge.
+      - type: rewrite
+        source: /*
+        destination: /index.html

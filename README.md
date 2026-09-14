@@ -292,9 +292,37 @@ backend/
   install base, but a very large one would want this moved to a background job
   before it's used from the dashboard.
 
+## Deploying to Render (current production host)
+
+The API is already live on Render as a manually-created Web Service
+(`https://prism-backend-9hjw.onrender.com`) — `Procfile`
+(`uvicorn app.main:app --host 0.0.0.0 --port $PORT`) is what Render runs for it;
+nothing new needed there beyond keeping its env vars current (see the list under
+"Deploying to Railway" below — same vars, just set in Render's dashboard instead).
+
+**Admin dashboard**, as a second Render service (`backend/render.yaml` describes
+this one; the API isn't redefined in it, so connecting the Blueprint can't create
+a duplicate of the already-existing API service):
+
+- Render dashboard → **New** → **Static Site** → select this repo.
+- Root directory: `admin`
+- Build command: `npm install && npm run build`
+- Publish directory: `dist`
+- Add a rewrite rule `/*` → `/index.html` (Settings → Redirects/Rewrites) — needed
+  because this is a client-side-routed React app; without it, refreshing on e.g.
+  `/users` 404s.
+- Env var: `VITE_API_BASE_URL` = the API service's Render URL (baked in at
+  *build* time — set it before the first build, not after).
+- Once it has a URL, add that URL to the API service's `CORS_ALLOW_ORIGINS` env
+  var on Render and redeploy the API.
+
+Or skip all of the above and use the Blueprint directly: **New** → **Blueprint**
+→ select this repo → Render finds `render.yaml` and sets it up the same way.
+
 ## Deploying to Railway
 
-Two separate Railway services from this one GitHub repo:
+Documented as an alternative — the app isn't currently hosted here, Render is
+(see above). Two separate Railway services from this one GitHub repo:
 
 | Service | Root directory | Config |
 |---|---|---|
