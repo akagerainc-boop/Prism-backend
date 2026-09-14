@@ -1,7 +1,7 @@
-# Prism Scanner backend
+# Docs Scanner backend
 
-The Python/Postgres server behind the Prism Scanner Flutter app: email+OTP login,
-Prism Cloud document storage (documents stored as BLOBs in Postgres, not on local
+The Python/Postgres server behind the Docs Scanner Flutter app: email+OTP login,
+Docs Cloud document storage (documents stored as BLOBs in Postgres, not on local
 disk — Render/Railway's filesystem is ephemeral), passport-photo background
 replacement, document reconstruction for **Perfect OCR**, push notifications (FCM),
 force-update, and the admin dashboard API (`admin/` — a separate React app; see its
@@ -27,7 +27,7 @@ Dart file it corresponds to.
 - Email + OTP login (`/auth/email/*`) — real OTP generation, hashing, rate limiting,
   and email delivery (Resend on Render — Gmail SMTP is blocked outbound there —
   or Gmail SMTP for local dev).
-- Prism Cloud (`/cloud/*`) — account creation, storage-quota enforcement, document
+- Docs Cloud (`/cloud/*`) — account creation, storage-quota enforcement, document
   upload/list/download, backed by real Postgres rows (including the file bytes
   themselves — see `documents.file_data`).
 - Wallet card sync (`/cloud/cards`) — bank/ID/passport/license cards, including
@@ -173,7 +173,7 @@ Regular Gmail passwords don't work for SMTP once 2-Step Verification is on
 1. Go to [myaccount.google.com/security](https://myaccount.google.com/security).
 2. Turn on **2-Step Verification** if it isn't already.
 3. Go to **App passwords** (search for it if it's not on the main security page).
-4. Create one named e.g. "Prism Scanner backend" — Google shows a 16-character
+4. Create one named e.g. "Docs Scanner backend" — Google shows a 16-character
    password like `abcd efgh ijkl mnop`.
 5. Paste it into `.env` as `SMTP_APP_PASSWORD` **without spaces**.
 6. Set `SMTP_DEV_MODE=false`.
@@ -268,7 +268,7 @@ backend/
 - No authentication is enforced on `/cloud/*` beyond the `X-User-Email` header
   matching a row — anyone who knows (or guesses) an email can read that account's
   document list. The OTP-issued `sessionToken` (JWT) exists but isn't yet checked
-  as a bearer token on the Prism Cloud endpoints. Add that before this handles
+  as a bearer token on the Docs Cloud endpoints. Add that before this handles
   real user data outside your own testing. **This applies to `/cloud/cards` too,
   and matters more there** — full card numbers and CVVs, not just document
   metadata. Wiring real bearer-token auth onto `/cloud/*` should happen before

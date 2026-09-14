@@ -1,4 +1,4 @@
-"""Prism Cloud: account, document listing, upload and download.
+"""Docs Cloud: account, document listing, upload and download.
 
 Contract (from ``lib/services/prism_cloud_service.dart`` +
 ``lib/models/prism_cloud_account.dart``):
@@ -60,7 +60,7 @@ def _get_or_create_user(db: Session, email: str) -> User:
         user = User(email=email, created_at=_utcnow(), is_active=True)
         db.add(user)
         db.flush()
-        log.info("Created user row for %s via Prism Cloud", email)
+        log.info("Created user row for %s via Docs Cloud", email)
     if db.get(StorageUsage, user.id) is None:
         db.add(StorageUsage(user_id=user.id, used_bytes=0, document_count=0))
     return user
@@ -260,7 +260,7 @@ def upload_document(
                     status_code=status.HTTP_507_INSUFFICIENT_STORAGE,
                     detail=(
                         f"This upload would exceed your {_human_bytes(limit)} "
-                        f"of Prism Cloud storage ({_human_bytes(used)} already "
+                        f"of Docs Cloud storage ({_human_bytes(used)} already "
                         "used). Delete older cloud documents to free up space."
                     ),
                 )
@@ -307,7 +307,7 @@ def upload_document(
         modifiedAt=now,
         storageUsedBytes=total_used,
         storageLimitBytes=limit,
-        message="Uploaded to Prism Cloud.",
+        message="Uploaded to Docs Cloud.",
     )
 
 

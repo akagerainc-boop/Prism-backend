@@ -50,7 +50,7 @@ class VerifyOtpResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Prism Cloud -- POST /cloud/account, GET /cloud/documents
+# Docs Cloud -- POST /cloud/account, GET /cloud/documents
 # ---------------------------------------------------------------------------
 class CloudAccountBody(BaseModel):
     email: str
@@ -130,7 +130,7 @@ class ScanFeedbackBody(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Prism AI history -- POST /ai/history, GET /ai/history, DELETE /ai/history/{id}
+# Docs AI history -- POST /ai/history, GET /ai/history, DELETE /ai/history/{id}
 # Mirrors lib/services/chat_history_service.dart's ChatMessageRecord /
 # ChatSessionRecord exactly -- do not rename these fields.
 # ---------------------------------------------------------------------------

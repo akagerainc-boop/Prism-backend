@@ -1,4 +1,4 @@
-"""On-disk storage helpers for Prism Cloud documents and OCR job artifacts.
+"""On-disk storage helpers for Docs Cloud documents and OCR job artifacts.
 
 Layout under ``PRISM_STORAGE_ROOT``::
 

@@ -39,7 +39,7 @@ export function LoginPage() {
           >
             P
           </div>
-          <h1 className="text-[18px] font-extrabold">Prism Scanner Admin</h1>
+          <h1 className="text-[18px] font-extrabold">Docs Scanner Admin</h1>
           <p className="mt-1 text-[12.5px]" style={{ color: 'var(--text-secondary)' }}>
             Sign in to manage the app
           </p>

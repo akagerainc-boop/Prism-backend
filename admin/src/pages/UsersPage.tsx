@@ -184,7 +184,7 @@ export function UsersPage() {
               className="mb-6 rounded-xl p-4"
               style={{ background: 'var(--prism-primary)', color: '#fff' }}
             >
-              <div className="text-[13px] font-bold">Prism Cloud</div>
+              <div className="text-[13px] font-bold">Docs Cloud</div>
               <div className="mt-1 text-[12px] opacity-80">
                 {formatBytes(selected.user.storageUsedBytes)} of{' '}
                 {formatBytes(selected.user.storageLimitBytes)} used
@@ -197,7 +197,7 @@ export function UsersPage() {
             <div className="flex flex-col gap-2">
               {selected.documents.length === 0 && (
                 <p className="text-[12.5px]" style={{ color: 'var(--text-secondary)' }}>
-                  No documents backed up to Prism Cloud.
+                  No documents backed up to Docs Cloud.
                 </p>
               )}
               {selected.documents.map((doc) => (

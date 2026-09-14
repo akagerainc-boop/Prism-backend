@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 /* ---------------------------------------------------------------------------
-   Prism Scanner admin dashboard -- design tokens.
+   Docs Scanner admin dashboard -- design tokens.
    Mirrors the mobile app's palette (lib/constant/color.dart /
    lib/constant/prism_colors.dart) so the dashboard reads as the same
    product, not a bolted-on separate tool.

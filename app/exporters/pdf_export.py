@@ -279,7 +279,7 @@ def export_pdf(document: StructuredDocument, **_: object) -> bytes:
     buffer = io.BytesIO()
     pdf = canvas.Canvas(buffer)
     pdf.setTitle(document.sourceFilename or "Prism document")
-    pdf.setCreator("Prism Scanner backend")
+    pdf.setCreator("Docs Scanner backend")
 
     if not document.pages:
         pdf.setPageSize(_FALLBACK_SIZE)
@@ -461,7 +461,7 @@ def export_clean_pdf(document: StructuredDocument, **_: object) -> bytes:
     buffer = io.BytesIO()
     pdf = canvas.Canvas(buffer)
     pdf.setTitle(document.sourceFilename or "Prism document")
-    pdf.setCreator("Prism Scanner backend")
+    pdf.setCreator("Docs Scanner backend")
 
     total_pages = len(document.pages)
     for page in document.pages:

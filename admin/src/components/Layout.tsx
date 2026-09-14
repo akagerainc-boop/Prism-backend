@@ -42,7 +42,7 @@ export function Layout({ children }: { children: ReactNode }) {
             P
           </div>
           <div>
-            <div className="text-[15px] font-extrabold leading-tight">Prism Scanner</div>
+            <div className="text-[15px] font-extrabold leading-tight">Docs Scanner</div>
             <div className="text-[11px] leading-tight" style={{ color: 'var(--text-secondary)' }}>
               Admin
             </div>

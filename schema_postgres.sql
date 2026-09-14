@@ -1,5 +1,5 @@
 -- ---------------------------------------------------------------------------
--- Prism Scanner -- Postgres schema
+-- Docs Scanner -- Postgres schema
 --
 -- Replaces schema.sql (MySQL/XAMPP), which is no longer used. Apply with:
 --     psql "$DATABASE_URL" -f schema_postgres.sql
@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 -- ---------------------------------------------------------------------------
--- accounts -- Prism Cloud plan + the storage limit that plan grants.
+-- accounts -- Docs Cloud plan + the storage limit that plan grants.
 -- Free plan is 1 GB (see kCloudStorageLimitMb in the Flutter client).
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS accounts (
@@ -73,7 +73,7 @@ CREATE TABLE IF NOT EXISTS otp_requests (
 CREATE INDEX IF NOT EXISTS ix_otp_requests_email_time ON otp_requests (email, requested_at);
 
 -- ---------------------------------------------------------------------------
--- documents -- PDFs backed up to Prism Cloud. Bytes live in `file_data`
+-- documents -- PDFs backed up to Docs Cloud. Bytes live in `file_data`
 -- (BYTEA) so they survive Railway's ephemeral filesystem; this table is
 -- both the index and the store.
 -- ---------------------------------------------------------------------------
@@ -93,7 +93,7 @@ CREATE INDEX IF NOT EXISTS ix_documents_user_modified ON documents (user_id, mod
 
 -- ---------------------------------------------------------------------------
 -- cards -- Wallet cards (bank card, national ID, passport, driving license)
--- synced to Prism Cloud. `card_data` holds every non-image field as JSONB;
+-- synced to Docs Cloud. `card_data` holds every non-image field as JSONB;
 -- front/back photos (ID/passport/license only) live in their own BYTEA
 -- columns, same blob-in-the-row approach as `documents`.
 -- ---------------------------------------------------------------------------
@@ -165,7 +165,7 @@ CREATE TABLE IF NOT EXISTS student_applications (
 CREATE INDEX IF NOT EXISTS ix_student_applications_email ON student_applications (user_email);
 
 -- ---------------------------------------------------------------------------
--- ai_chat_sessions -- Prism AI conversation history synced from the client.
+-- ai_chat_sessions -- Docs AI conversation history synced from the client.
 -- messages_json mirrors the client's local JSON shape exactly (see
 -- lib/services/chat_history_service.dart). Media attachments stay
 -- device-local -- only the text conversation round-trips through here.
@@ -198,7 +198,7 @@ CREATE TABLE IF NOT EXISTS ocr_jobs (
 CREATE INDEX IF NOT EXISTS ix_ocr_jobs_created ON ocr_jobs (created_at);
 
 -- ---------------------------------------------------------------------------
--- admin_users -- Prism Scanner admin-dashboard operators. Distinct from
+-- admin_users -- Docs Scanner admin-dashboard operators. Distinct from
 -- `users` (app users sign in with email+OTP; admins sign in with
 -- email+password against this table instead). Created by hand (there's no
 -- public signup) -- see backend/README.md for how to seed the first one.

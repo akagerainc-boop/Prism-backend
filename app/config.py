@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     )
 
     # ---- App ---------------------------------------------------------------
-    app_name: str = "Prism Scanner Backend"
+    app_name: str = "Docs Scanner Backend"
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
 
     # ---- Postgres ------------------------------------------------------------
@@ -65,7 +65,7 @@ class Settings(BaseSettings):
     smtp_use_ssl: bool = Field(default=True, alias="SMTP_USE_SSL")
     smtp_user: str = Field(default="", alias="SMTP_USER")
     smtp_app_password: str = Field(default="", alias="SMTP_APP_PASSWORD")
-    smtp_from_name: str = Field(default="Prism Scanner", alias="SMTP_FROM_NAME")
+    smtp_from_name: str = Field(default="Docs Scanner", alias="SMTP_FROM_NAME")
     smtp_timeout_seconds: int = Field(default=20, alias="SMTP_TIMEOUT_SECONDS")
     # When true, the OTP is logged instead of emailed (local dev without SMTP).
     smtp_dev_mode: bool = Field(default=False, alias="SMTP_DEV_MODE")

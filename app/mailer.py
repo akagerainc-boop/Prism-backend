@@ -71,7 +71,7 @@ def _build_message(
         f"It expires in {ttl_minutes} minutes and can only be used once.\n\n"
         "If you didn't request this code, you can safely ignore this email -- "
         "someone may have typed your address by mistake.\n\n"
-        "-- Prism Scanner\n"
+        "-- Docs Scanner\n"
     )
 
     # HTML version
@@ -107,7 +107,7 @@ def _build_message(
           line-height:1.6;
           color:#4b5563;
       ">
-        Enter this code in Prism Scanner to finish signing in.
+        Enter this code in Docs Scanner to finish signing in.
       </p>
 
       <div style="

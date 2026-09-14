@@ -1,4 +1,4 @@
-"""Prism is fully free -- one flat Prism Cloud storage limit for every
+"""Prism is fully free -- one flat Docs Cloud storage limit for every
 account. No paid tiers exist; ``normalize_plan`` always resolves to
 ``"free"`` regardless of what a (now-nonexistent) client billing screen
 might send, which also self-heals any account row left over from before

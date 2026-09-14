@@ -1,4 +1,4 @@
-"""Prism Cloud Wallet: sync bank/ID/passport/license cards across devices.
+"""Docs Cloud Wallet: sync bank/ID/passport/license cards across devices.
 
 Contract (from ``lib/services/wallet_cloud_service.dart``):
 
@@ -15,7 +15,7 @@ Contract (from ``lib/services/wallet_cloud_service.dart``):
   DELETE /cloud/cards/{id}   (header X-User-Email)
       <- 204
 
-Cards are not counted against the Prism Cloud storage quota that governs
+Cards are not counted against the Docs Cloud storage quota that governs
 ``/cloud/documents`` -- they're a different, typically much smaller, data
 domain (a handful of small JSON records plus at most two photos each), and
 conflating the two would make the document-library quota confusing to

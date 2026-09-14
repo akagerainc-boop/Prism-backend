@@ -1,6 +1,6 @@
-# Prism Scanner admin dashboard
+# Docs Scanner admin dashboard
 
-React (Vite + TypeScript + Tailwind) SPA for managing Prism Scanner: users, Prism
+React (Vite + TypeScript + Tailwind) SPA for managing Docs Scanner: users, Docs
 Cloud usage per account, installed devices, force-update version control, and
 sending push notifications. Talks to `../app/routers/admin.py` in the backend
 right next to it — see the backend's own `README.md` ("Admin dashboard" and

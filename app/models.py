@@ -50,7 +50,7 @@ class User(Base):
 
 
 class Account(Base):
-    """Prism Cloud account: the plan and the storage limit it grants."""
+    """Docs Cloud account: the plan and the storage limit it grants."""
 
     __tablename__ = "accounts"
 
@@ -111,7 +111,7 @@ class OtpRequestLog(Base):
 
 
 class Document(Base):
-    """A PDF backed up to Prism Cloud."""
+    """A PDF backed up to Docs Cloud."""
 
     __tablename__ = "documents"
 
@@ -141,7 +141,7 @@ class Document(Base):
 
 class Card(Base):
     """A Wallet card -- bank card, national ID, passport, or driving
-    license -- synced to Prism Cloud so it's available on any device.
+    license -- synced to Docs Cloud so it's available on any device.
 
     ``card_data`` holds every non-image field (card number, holder name,
     expiry, CVV, ID number, etc.) as one JSON object; the Flutter client
@@ -258,7 +258,7 @@ class StudentApplication(Base):
 
 
 class AiChatSession(Base):
-    """One saved Prism AI conversation, synced from the client.
+    """One saved Docs AI conversation, synced from the client.
 
     ``messages_json`` stores the exact message list the client already
     persists locally (see ``lib/services/chat_history_service.dart``) --
@@ -366,7 +366,7 @@ class NotificationLog(Base):
 
 
 class AdminUser(Base):
-    """A Prism Scanner admin-dashboard operator -- distinct from `User`
+    """A Docs Scanner admin-dashboard operator -- distinct from `User`
     (app users sign in with email+OTP; admins are not app users and sign in
     with email+password against this table instead).
     """

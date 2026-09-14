@@ -72,7 +72,7 @@ def build_book_pdf(
 
     pdf = canvas.Canvas(str(destination), pagesize=page_size)
     pdf.setTitle(title or "Prism scan")
-    pdf.setCreator("Prism Scanner backend")
+    pdf.setCreator("Docs Scanner backend")
 
     rendered = 0
     for index, data in enumerate(pages, start=1):

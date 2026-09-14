@@ -1,4 +1,4 @@
-"""Prism AI conversation history sync.
+"""Docs AI conversation history sync.
 
 Contract (from ``lib/services/chat_history_service.dart`` /
 ``lib/services/ai_history_service.dart``):

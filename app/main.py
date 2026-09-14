@@ -1,4 +1,4 @@
-"""Prism Scanner backend -- FastAPI application entrypoint.
+"""Docs Scanner backend -- FastAPI application entrypoint.
 
 Run it with::
 
@@ -92,9 +92,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Prism Scanner API",
+    title="Docs Scanner API",
     description=(
-        "Backend for the Prism Scanner Flutter app: email+OTP auth, Prism Cloud "
+        "Backend for the Docs Scanner Flutter app: email+OTP auth, Docs Cloud "
         "document sync, passport-photo background replacement, and OpenCV "
         "document scanning."
     ),
@@ -239,7 +239,7 @@ def health_detail() -> dict:
 @app.get("/", tags=["meta"])
 def root() -> dict:
     return {
-        "name": "Prism Scanner API",
+        "name": "Docs Scanner API",
         "docs": "/docs",
         "health": "/health",
     }
