@@ -28,15 +28,18 @@ from .logging_config import configure_logging, get_logger
 from .opencv_document_scanner import pipeline_status
 from .passport import warm_up_session
 from .routers import (
+    admin,
     ai_history,
     auth,
     card_mfa,
     cloud,
+    devices,
     feedback,
     ocr,
     passport_photo,
     perfect,
     structure,
+    version,
     wallet,
 )
 from .storage import storage_root
@@ -53,18 +56,13 @@ async def lifespan(app: FastAPI):
     log.info("Storage root: %s", root)
 
     if check_connection():
-        log.info(
-            "Connected to MySQL database '%s' at %s:%s",
-            settings.mysql_database,
-            settings.mysql_host,
-            settings.mysql_port,
-        )
+        log.info("Connected to Postgres.")
     else:
         # Not fatal: the server still serves /health and /docs, which is the
         # fastest way for the user to see *why* it isn't working.
         log.error(
-            "Could not reach MySQL. Start XAMPP's MySQL service and import "
-            "schema.sql, then check MYSQL_* in backend/.env."
+            "Could not reach Postgres. Check DATABASE_URL in backend/.env, "
+            "and that schema_postgres.sql has been applied."
         )
 
     if not settings.jwt_secret:
@@ -198,6 +196,9 @@ app.include_router(structure.router)
 app.include_router(perfect.router)
 app.include_router(feedback.router)
 app.include_router(ai_history.router)
+app.include_router(devices.router)
+app.include_router(version.router)
+app.include_router(admin.router)
 
 
 @app.get("/health", tags=["meta"])
@@ -208,7 +209,7 @@ def health() -> dict:
 
 @app.get("/health/detail", tags=["meta"])
 def health_detail() -> dict:
-    """Deeper check: MySQL reachability and OpenCV scanner status.
+    """Deeper check: Postgres reachability and OpenCV scanner status.
 
     Useful during setup without reading the logs.
     """
@@ -216,9 +217,6 @@ def health_detail() -> dict:
         "status": "ok",
         "database": {
             "connected": check_connection(),
-            "name": settings.mysql_database,
-            "host": settings.mysql_host,
-            "port": settings.mysql_port,
         },
         "smtp": {
             "configured": bool(settings.smtp_user and settings.smtp_app_password),

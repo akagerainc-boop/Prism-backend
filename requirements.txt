@@ -4,7 +4,7 @@ python-multipart
 pydantic
 pydantic-settings
 SQLAlchemy
-PyMySQL
+psycopg2-binary
 python-dotenv
 PyJWT
 Pillow
@@ -17,6 +17,7 @@ openpyxl
 reportlab
 pypdf
 matplotlib
+firebase-admin
 
 
 # uvicorn app.main:app --reload --host 0.0.0.0 --port 8000

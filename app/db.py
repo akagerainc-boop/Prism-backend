@@ -1,9 +1,9 @@
-"""SQLAlchemy 2.x engine/session wiring for the XAMPP MySQL ``prism`` database.
+"""SQLAlchemy 2.x engine/session wiring for the Postgres ``prism`` database.
 
 A *synchronous* engine is used deliberately: the endpoints that touch the
 database are declared as plain ``def`` (not ``async def``), so FastAPI runs them
 in its threadpool and the event loop is never blocked. This keeps the DB code
-simple and avoids an async MySQL driver dependency.
+simple and avoids an async Postgres driver dependency.
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ log = get_logger(__name__)
 engine = create_engine(
     settings.sqlalchemy_url,
     echo=settings.sql_echo,
-    pool_pre_ping=True,  # XAMPP MySQL drops idle connections aggressively
+    pool_pre_ping=True,  # managed Postgres providers drop idle connections
     pool_recycle=1800,
     future=True,
 )
@@ -63,6 +63,6 @@ def check_connection() -> bool:
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
         return True
-    except Exception as exc:  # pragma: no cover - depends on live MySQL
-        log.warning("MySQL connection check failed: %s", exc)
+    except Exception as exc:  # pragma: no cover - depends on live Postgres
+        log.warning("Postgres connection check failed: %s", exc)
         return False

@@ -1,5 +1,6 @@
-# Secrets -- never commit the real environment file.
+# Secrets -- never commit the real environment file or credentials.
 .env
+firebase-service-account.json
 
 # Virtual environments
 .venv/

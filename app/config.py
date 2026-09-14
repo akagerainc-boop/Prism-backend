@@ -34,14 +34,12 @@ class Settings(BaseSettings):
     app_name: str = "Prism Scanner Backend"
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
 
-    # ---- MySQL (XAMPP) -----------------------------------------------------
-    # Either supply a full DSN, or the individual parts below.
-    mysql_dsn: str | None = Field(default=None, alias="MYSQL_DSN")
-    mysql_host: str = Field(default="127.0.0.1", alias="MYSQL_HOST")
-    mysql_port: int = Field(default=3306, alias="MYSQL_PORT")
-    mysql_user: str = Field(default="root", alias="MYSQL_USER")
-    mysql_password: str = Field(default="", alias="MYSQL_PASSWORD")
-    mysql_database: str = Field(default="prism", alias="MYSQL_DATABASE")
+    # ---- Postgres ------------------------------------------------------------
+    # Full DSN, e.g. Aiven's `postgres://user:pass@host:port/db?sslmode=require`.
+    # Accepted as either `postgres://` or `postgresql://` -- see
+    # `sqlalchemy_url` below, which normalizes it to the psycopg2 driver URL
+    # SQLAlchemy needs (`postgresql+psycopg2://...`).
+    database_url: str = Field(default="", alias="DATABASE_URL")
     sql_echo: bool = Field(default=False, alias="SQL_ECHO")
 
     # ---- JWT / sessions ----------------------------------------------------
@@ -105,18 +103,38 @@ class Settings(BaseSettings):
     # ---- CORS --------------------------------------------------------------
     cors_allow_origins: str = Field(default="*", alias="CORS_ALLOW_ORIGINS")
 
+    # ---- Firebase Cloud Messaging -------------------------------------------
+    # Either a filesystem path to the service-account JSON, or the JSON
+    # itself pasted inline (Railway env vars can't hold files -- see
+    # `firebase_admin_credentials` below, which accepts either shape).
+    firebase_service_account_json: str = Field(
+        default="", alias="FIREBASE_SERVICE_ACCOUNT_JSON"
+    )
+
+    # ---- Force update --------------------------------------------------------
+    # Seed values only -- the live values the app checks against live in the
+    # `app_config` table (admin-editable); these just give that table
+    # something sane to start from the first time it's read.
+    min_supported_version: str = Field(default="1.0.0", alias="MIN_SUPPORTED_VERSION")
+    play_store_url: str = Field(default="", alias="PLAY_STORE_URL")
+
     @property
     def sqlalchemy_url(self) -> str:
-        if self.mysql_dsn:
-            return self.mysql_dsn
-        from urllib.parse import quote_plus
-
-        pwd = quote_plus(self.mysql_password)
-        user = quote_plus(self.mysql_user)
-        return (
-            f"mysql+pymysql://{user}:{pwd}@{self.mysql_host}:{self.mysql_port}"
-            f"/{self.mysql_database}?charset=utf8mb4"
-        )
+        url = self.database_url
+        if not url:
+            raise RuntimeError(
+                "DATABASE_URL is not set -- add it to backend/.env (see "
+                ".env.example)."
+            )
+        # SQLAlchemy needs an explicit driver; psycopg2 is what's installed
+        # (see requirements.txt). Aiven/Railway hand out `postgres://`, which
+        # psycopg2 itself still accepts, but SQLAlchemy 2.x only recognizes
+        # `postgresql://` as the base scheme.
+        if url.startswith("postgres://"):
+            url = "postgresql://" + url[len("postgres://"):]
+        if url.startswith("postgresql://"):
+            url = "postgresql+psycopg2://" + url[len("postgresql://"):]
+        return url
 
     @property
     def storage_path(self) -> Path:

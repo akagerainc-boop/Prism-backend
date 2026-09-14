@@ -1,9 +1,11 @@
 # Prism Scanner backend
 
-The Python/MySQL server behind the Prism Scanner Flutter app: email+OTP login, Prism
-Cloud document storage (documents stored as BLOBs in MySQL, not on local disk —
-Render's filesystem is ephemeral), passport-photo background replacement, and
-document reconstruction for **Perfect OCR**.
+The Python/Postgres server behind the Prism Scanner Flutter app: email+OTP login,
+Prism Cloud document storage (documents stored as BLOBs in Postgres, not on local
+disk — Render/Railway's filesystem is ephemeral), passport-photo background
+replacement, document reconstruction for **Perfect OCR**, push notifications (FCM),
+force-update, and the admin dashboard API (`admin/` — a separate React app; see its
+own section below).
 
 **No OCR/layout ML model runs on this backend.** Recognition happens client-side —
 the Flutter app reads each scanned page with Gemini 3.6 Flash (multimodal, via the
@@ -26,7 +28,7 @@ Dart file it corresponds to.
   and email delivery (Resend on Render — Gmail SMTP is blocked outbound there —
   or Gmail SMTP for local dev).
 - Prism Cloud (`/cloud/*`) — account creation, storage-quota enforcement, document
-  upload/list/download, backed by real MySQL rows (including the file bytes
+  upload/list/download, backed by real Postgres rows (including the file bytes
   themselves — see `documents.file_data`).
 - Wallet card sync (`/cloud/cards`) — bank/ID/passport/license cards, including
   the CVV, upsert/list/delete across devices. Not counted against the document
@@ -58,15 +60,17 @@ Dart file it corresponds to.
   working replacement for that idea.
 
 **Needs your input before it actually works end to end:**
-1. A MySQL database reachable via `MYSQL_*` in `.env` (XAMPP locally, FreeDB or
-   similar in production), with `schema.sql` imported.
+1. A Postgres database reachable via `DATABASE_URL` in `.env` (Aiven, Railway,
+   Supabase, or any Postgres host), with `schema_postgres.sql` applied.
 2. Email delivery configured — see `.env.example`'s `EMAIL_PROVIDER` /
-   `RESEND_API_KEY` (Render) or `SMTP_*` (local), or `SMTP_DEV_MODE=true` to log
-   codes instead while testing.
+   `RESEND_API_KEY` (Render/Railway) or `SMTP_*` (local), or `SMTP_DEV_MODE=true`
+   to log codes instead while testing.
 3. A `JWT_SECRET` value (one command, see below).
 4. `rembg`/`onnxruntime` (passport photo) download a model file on first use —
    needs network access the first time.
-5. Perfect OCR needs nothing extra on this backend (just `pip install -r
+5. `FIREBASE_SERVICE_ACCOUNT_JSON` for push notifications to actually send — see
+   "Push notifications (FCM)" below.
+6. Perfect OCR needs nothing extra on this backend (just `pip install -r
    requirements.txt`, which now includes `matplotlib` for formula rendering) —
    the Gemini calls happen entirely in the Flutter app via Firebase AI.
 
@@ -81,7 +85,8 @@ copy .env.example .env
 ```
 
 Edit `.env`:
-- Leave `MYSQL_*` as-is if XAMPP's MySQL is default (root, no password, port 3306).
+- Set `DATABASE_URL` to your Postgres connection string, e.g.
+  `postgres://user:password@host:port/database?sslmode=require`.
 - Generate a `JWT_SECRET`:
   ```powershell
   python -c "import secrets; print(secrets.token_urlsafe(48))"
@@ -90,9 +95,12 @@ Edit `.env`:
   logged to the console instead of sent). Switch it to `false` once you've added
   the App Password below.
 
-Start XAMPP → Control Panel → start **MySQL** → open **phpMyAdmin**
-(`http://localhost/phpmyadmin`) → **Import** tab → choose `backend/schema.sql` →
-Go. (Or from a terminal: `mysql -u root -p < schema.sql`.)
+Apply the schema once (creates all tables if they don't already exist — safe to
+re-run):
+
+```powershell
+psql "$env:DATABASE_URL" -f schema_postgres.sql
+```
 
 Run the server:
 
@@ -106,9 +114,56 @@ only reaches a server bound to all interfaces, not just `127.0.0.1`.
 
 Check it's alive:
 - `http://localhost:8000/health` → `{"status": "ok"}`
-- `http://localhost:8000/health/detail` → MySQL/SMTP/JWT/OCR status at a glance —
+- `http://localhost:8000/health/detail` → Postgres/SMTP/JWT/OCR status at a glance —
   the fastest way to see *why* something isn't working during setup.
 - `http://localhost:8000/docs` → interactive API docs for every endpoint.
+
+## Push notifications (FCM)
+
+The admin dashboard sends pushes via the Firebase Admin SDK, using the same
+Firebase project the Flutter app already uses for Auth/App Check/AI.
+
+1. Firebase Console → Project Settings → **Service Accounts** → **Generate new
+   private key** → downloads a JSON file.
+2. Local dev: save it as `backend/firebase-service-account.json` (already
+   git-ignored) and leave `FIREBASE_SERVICE_ACCOUNT_JSON` in `.env` pointing at
+   that path.
+3. Railway: paste the JSON file's contents directly as the
+   `FIREBASE_SERVICE_ACCOUNT_JSON` env var value (Railway env vars can't hold a
+   file) — `app/fcm.py` accepts either shape.
+
+The Flutter app registers every install (`POST /devices/register`, including
+guests) so a broadcast reaches everyone; `/admin/notifications/send` reads those
+tokens and sends via `firebase_admin.messaging.send_each_for_multicast`.
+
+## Admin dashboard
+
+`admin/` is a separate React (Vite + TypeScript + Tailwind) app — a different
+Railway service from this API, same repo. It talks to the `/admin/*` endpoints in
+`app/routers/admin.py` using its own admin-only JWT (distinct from app-user
+session tokens — see `security.create_admin_token`).
+
+There's no public admin signup. Create the first login with:
+
+```powershell
+python seed_admin.py you@example.com --name "Your Name"
+```
+
+Local dev:
+
+```powershell
+cd admin
+copy .env.example .env.local    REM set VITE_API_BASE_URL to your local backend
+npm install
+npm run dev
+```
+
+## Force update
+
+`/app/version-check?current=<version>` (called by the Flutter app on every
+launch) compares the installed version against `app_config`'s
+`min_supported_version` — editable from the admin dashboard's Force Update page,
+which also stores the Play Store URL the client opens when it must update.
 
 ## Getting a Gmail App Password
 
@@ -147,6 +202,14 @@ Every router file documents its own contract in its module docstring. Summary:
 | GET/POST | `/cloud/cards` | `wallet_cloud_service.dart` — Wallet card sync, real, working |
 | GET | `/cloud/cards/{id}/front`, `/back` | `wallet_cloud_service.dart` |
 | DELETE | `/cloud/cards/{id}` | `wallet_cloud_service.dart` |
+| POST | `/devices/register` | `push_notification_service.dart` — FCM token registration (email nullable, guests register too) |
+| GET | `/app/version-check?current=` | `version_check_service.dart` — force-update check |
+| POST | `/admin/auth/login` | admin dashboard (`admin/`) |
+| GET | `/admin/users`, `/admin/users/{id}` | admin dashboard |
+| PATCH | `/admin/users/{id}/active` | admin dashboard |
+| GET | `/admin/devices` | admin dashboard |
+| GET/PUT | `/admin/app-config` | admin dashboard — force-update settings |
+| POST | `/admin/notifications/send` | admin dashboard — sends via `app/fcm.py` |
 
 **`GET /cloud/documents/{id}/file` is new** — `PrismCloudService.downloadDocument()`
 was added to the Flutter client to call it (cross-device document download), so
@@ -163,31 +226,41 @@ an empty payload today. Don't build new client features against them — use
 
 ```
 backend/
-  schema.sql              MySQL DDL — import this, not the ORM, to create the DB
+  schema_postgres.sql     Postgres DDL — apply this, not the ORM, to create the DB
+  seed_admin.py           Create/reset an admin-dashboard login
+  Procfile / railway.json  Railway deploy config for this API service
   requirements.txt        Everything the backend needs (no OCR/layout ML model —
                            recognition runs client-side via Gemini; see above)
   .env.example            Copy to .env and fill in
+  admin/                  Separate React admin dashboard — its own Railway service,
+                           its own README-equivalent above ("Admin dashboard")
   app/
     main.py                FastAPI app, CORS, error envelope, /health
     config.py               All settings, loaded from .env
     db.py                    SQLAlchemy engine/session
-    models.py                ORM models (mirrors schema.sql)
+    models.py                ORM models (mirrors schema_postgres.sql)
     schemas.py                Pydantic request/response models
-    security.py                OTP hashing, JWT, email validation
-    mailer.py                   Resend/Gmail SMTP email sending
-    plans.py                     Prism is free -- one flat storage limit
-    storage.py                    Path helpers, path-traversal guards
-    passport.py                    rembg background replacement
-    imaging.py                      Shared image preprocessing helpers
-    ocr_support.py                   Upload handling shared by OCR/structure/perfect
-    document_model.py                 Structured JSON document model + builders
-    book_pdf.py                        Merged, page-numbered PDF (continuous mode)
-    exporters/                          pdf / docx / markdown / xlsx writers
-                                         (pdf_export.export_clean_pdf is Perfect
-                                         OCR's real, position-preserving reconstruction)
+    security.py                OTP hashing, JWT (app-user + admin), email validation
+    fcm.py                      Firebase Admin SDK push sending
+    app_config.py                admin-editable key/value settings (force update)
+    mailer.py                     Resend/Gmail SMTP email sending
+    plans.py                       Prism is free -- one flat storage limit
+    storage.py                      Path helpers, path-traversal guards
+    passport.py                      rembg background replacement
+    imaging.py                        Shared image preprocessing helpers
+    ocr_support.py                     Upload handling shared by OCR/structure/perfect
+    document_model.py                   Structured JSON document model + builders
+    book_pdf.py                          Merged, page-numbered PDF (continuous mode)
+    exporters/                            pdf / docx / markdown / xlsx writers
+                                           (pdf_export.export_clean_pdf is Perfect
+                                           OCR's real, position-preserving reconstruction)
     routers/
-      auth.py       cloud.py         passport_photo.py
-      ocr.py         structure.py    perfect.py   (Perfect OCR — real, working)
+      auth.py       cloud.py         passport_photo.py    devices.py
+      ocr.py         structure.py    perfect.py            version.py
+      wallet.py       card_mfa.py     feedback.py            admin.py
+                                                             (Perfect OCR in
+                                                              perfect.py is real,
+                                                              working)
 ```
 
 ## Known limitations, honestly
@@ -214,3 +287,35 @@ backend/
   to delete once nothing references them, or to finish wiring up a self-hosted
   engine later if Perfect OCR's Gemini dependency ever needs an offline
   alternative.
+- `/admin/notifications/send` with `target: "all"` sends one multicast batch per
+  500 registered devices, synchronously inside the request — fine for a modest
+  install base, but a very large one would want this moved to a background job
+  before it's used from the dashboard.
+
+## Deploying to Railway
+
+Two separate Railway services from this one GitHub repo:
+
+| Service | Root directory | Config |
+|---|---|---|
+| API | `backend/` | `railway.json` / `Procfile` — `uvicorn app.main:app --host 0.0.0.0 --port $PORT` |
+| Admin dashboard | `backend/admin/` | `admin/railway.json` — `npm install && npm run build`, then `npm run start` (serves `dist/` via `serve -s`) |
+
+For the API service, set these env vars in Railway's dashboard (mirrors `.env.example`):
+`DATABASE_URL`, `JWT_SECRET`, `EMAIL_PROVIDER` + (`RESEND_API_KEY` or `SMTP_*`),
+`FIREBASE_SERVICE_ACCOUNT_JSON` (the JSON itself, not a path), `CORS_ALLOW_ORIGINS`
+(must include the admin dashboard's Railway URL once it has one), and the
+`PASSPORT_*`/`MIN_SUPPORTED_VERSION`/`PLAY_STORE_URL` seed values as needed.
+
+For the admin service: `VITE_API_BASE_URL` pointing at the API service's Railway
+URL (Vite env vars are baked in at *build* time, so this must be set before the
+build runs, not just at start).
+
+Apply `schema_postgres.sql` against the production database once (from your
+machine, pointed at the production `DATABASE_URL`) before the API's first deploy
+serves real traffic — Railway doesn't run it for you.
+
+This repo does not run `railway up`/deploy anything itself — connect the GitHub
+repo to Railway (Railway's dashboard → New Project → Deploy from GitHub repo,
+once per service, each with its root directory set as above) and it redeploys on
+every push to `main`.

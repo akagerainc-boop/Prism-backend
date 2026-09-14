@@ -1,7 +1,7 @@
-"""SQLAlchemy ORM models mirroring ``schema.sql``.
+"""SQLAlchemy ORM models mirroring ``schema_postgres.sql``.
 
-``schema.sql`` is the authoritative DDL (it is what the user imports through
-phpMyAdmin). These classes must stay in sync with it.
+``schema_postgres.sql`` is the authoritative DDL (run it once against the
+Postgres database with ``psql``). These classes must stay in sync with it.
 """
 
 from __future__ import annotations
@@ -10,19 +10,19 @@ import datetime as dt
 from typing import Optional
 
 from sqlalchemy import (
-    JSON,
     BigInteger,
     Boolean,
     DateTime,
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
     func,
 )
-from sqlalchemy.dialects.mysql import LONGBLOB
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -121,7 +121,7 @@ class Document(Base):
     )
     name: Mapped[str] = mapped_column(String(512), nullable=False)
     size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
-    file_data: Mapped[bytes] = mapped_column(LONGBLOB, nullable=False)
+    file_data: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     content_type: Mapped[str] = mapped_column(
         String(128), nullable=False, default="application/pdf"
     )
@@ -156,9 +156,9 @@ class Card(Base):
         BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
     type: Mapped[str] = mapped_column(String(32), nullable=False)
-    card_data: Mapped[dict] = mapped_column(JSON, nullable=False)
-    front_image: Mapped[Optional[bytes]] = mapped_column(LONGBLOB, nullable=True)
-    back_image: Mapped[Optional[bytes]] = mapped_column(LONGBLOB, nullable=True)
+    card_data: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    front_image: Mapped[Optional[bytes]] = mapped_column(LargeBinary, nullable=True)
+    back_image: Mapped[Optional[bytes]] = mapped_column(LargeBinary, nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now()
     )
@@ -304,4 +304,98 @@ class OcrJob(Base):
     error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now()
+    )
+
+
+class Device(Base):
+    """One installed app instance -- an FCM registration.
+
+    ``user_id`` is nullable: guests still register a device so they can
+    receive a broadcast ("all installs") notification even before they sign
+    in. Keyed by ``fcm_token`` (unique) rather than a client-generated
+    device id, since the token itself already uniquely identifies where a
+    push actually goes -- re-registering with a fresh token (Firebase
+    rotates them) just updates the existing row in place.
+    """
+
+    __tablename__ = "devices"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    fcm_token: Mapped[str] = mapped_column(String(512), nullable=False, unique=True)
+    platform: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)  # android|ios
+    app_version: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now()
+    )
+    last_seen_at: Mapped[dt.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (Index("ix_devices_user", "user_id"),)
+
+
+class NotificationLog(Base):
+    """One notification the admin dashboard sent -- history, not a queue
+    (sending is synchronous via the Firebase Admin SDK; see
+    ``app/routers/admin.py``).
+    """
+
+    __tablename__ = "notifications"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)  # UUID4 string
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    image_url: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
+    target: Mapped[str] = mapped_column(String(16), nullable=False)  # all|device
+    target_device_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("devices.id", ondelete="SET NULL"), nullable=True
+    )
+    sent_by_admin_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("admin_users.id", ondelete="SET NULL"), nullable=True
+    )
+    success_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    failure_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (Index("ix_notifications_created", "created_at"),)
+
+
+class AdminUser(Base):
+    """A Prism Scanner admin-dashboard operator -- distinct from `User`
+    (app users sign in with email+OTP; admins are not app users and sign in
+    with email+password against this table instead).
+    """
+
+    __tablename__ = "admin_users"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    email: Mapped[str] = mapped_column(String(320), unique=True, nullable=False)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    display_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now()
+    )
+    last_login_at: Mapped[Optional[dt.datetime]] = mapped_column(DateTime, nullable=True)
+
+
+class AppConfig(Base):
+    """Admin-editable key/value settings -- currently just the force-update
+    fields (`min_supported_version`, `play_store_url`), read by the public
+    `GET /app/version-check` endpoint and written by the admin dashboard.
+    Key/value rather than named columns so a new setting never needs a
+    migration.
+    """
+
+    __tablename__ = "app_config"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[dt.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
     )

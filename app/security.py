@@ -109,7 +109,7 @@ def create_session_token(*, user_id: int, email: str) -> str:
 
 def decode_session_token(token: str) -> dict:
     try:
-        return jwt.decode(
+        payload = jwt.decode(
             token,
             _require_secret(),
             algorithms=[settings.jwt_algorithm],
@@ -117,3 +117,69 @@ def decode_session_token(token: str) -> dict:
         )
     except jwt.PyJWTError as exc:
         raise TokenError(str(exc)) from exc
+    if payload.get("typ") != "session":
+        raise TokenError("Not a session token.")
+    return payload
+
+
+# ---------------------------------------------------------------------------
+# Admin passwords + session tokens
+#
+# Admins are not app users (see models.AdminUser) -- a separate password
+# hash and a separate `typ` claim keep an app-user session token from ever
+# being usable against an admin-only endpoint, and vice versa, even though
+# both are signed with the same JWT_SECRET.
+# ---------------------------------------------------------------------------
+_ADMIN_PBKDF2_ITERATIONS = 310_000  # OWASP 2023 minimum for PBKDF2-SHA256
+
+
+def hash_admin_password(password: str) -> str:
+    salt = secrets.token_bytes(16)
+    derived = hashlib.pbkdf2_hmac(
+        "sha256", password.encode("utf-8"), salt, _ADMIN_PBKDF2_ITERATIONS
+    )
+    return f"pbkdf2_sha256${_ADMIN_PBKDF2_ITERATIONS}${salt.hex()}${derived.hex()}"
+
+
+def verify_admin_password(password: str, stored_hash: str) -> bool:
+    try:
+        algorithm, iterations_str, salt_hex, hash_hex = stored_hash.split("$")
+        if algorithm != "pbkdf2_sha256":
+            return False
+        derived = hashlib.pbkdf2_hmac(
+            "sha256",
+            password.encode("utf-8"),
+            bytes.fromhex(salt_hex),
+            int(iterations_str),
+        )
+        return hmac.compare_digest(derived.hex(), hash_hex)
+    except (ValueError, TypeError):
+        return False
+
+
+def create_admin_token(*, admin_id: int, email: str) -> str:
+    now = dt.datetime.now(dt.timezone.utc)
+    payload = {
+        "sub": str(admin_id),
+        "email": email,
+        "iat": int(now.timestamp()),
+        "exp": int((now + dt.timedelta(hours=12)).timestamp()),
+        "iss": "prism-backend",
+        "typ": "admin",
+    }
+    return jwt.encode(payload, _require_secret(), algorithm=settings.jwt_algorithm)
+
+
+def decode_admin_token(token: str) -> dict:
+    try:
+        payload = jwt.decode(
+            token,
+            _require_secret(),
+            algorithms=[settings.jwt_algorithm],
+            issuer="prism-backend",
+        )
+    except jwt.PyJWTError as exc:
+        raise TokenError(str(exc)) from exc
+    if payload.get("typ") != "admin":
+        raise TokenError("Not an admin token.")
+    return payload

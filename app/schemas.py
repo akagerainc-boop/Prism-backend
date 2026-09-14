@@ -323,3 +323,126 @@ class ExportBody(BaseModel):
     document: StructuredDocument | None = None
     filename: str | None = None
     options: dict[str, Any] = Field(default_factory=dict)
+
+
+# ---------------------------------------------------------------------------
+# Devices / FCM -- POST /devices/register
+# ---------------------------------------------------------------------------
+class DeviceRegisterBody(BaseModel):
+    fcmToken: str
+    email: str | None = None  # null for guests
+    platform: str | None = None  # "android" | "ios"
+    appVersion: str | None = None
+
+
+class DeviceRegisterResponse(BaseModel):
+    message: str = "Registered."
+
+
+# ---------------------------------------------------------------------------
+# Force update -- GET /app/version-check
+# ---------------------------------------------------------------------------
+class VersionCheckResponse(BaseModel):
+    minSupportedVersion: str
+    latestVersion: str
+    playStoreUrl: str
+    updateRequired: bool
+
+
+# ---------------------------------------------------------------------------
+# Admin auth -- POST /admin/auth/login
+# ---------------------------------------------------------------------------
+class AdminLoginBody(BaseModel):
+    email: str
+    password: str
+
+
+class AdminLoginResponse(BaseModel):
+    message: str
+    token: str
+    displayName: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# Admin: users -- GET /admin/users, GET /admin/users/{id}
+# ---------------------------------------------------------------------------
+class AdminUserSummary(BaseModel):
+    id: int
+    email: str
+    createdAt: dt.datetime
+    lastLoginAt: dt.datetime | None = None
+    isActive: bool
+    plan: str
+    storageUsedBytes: int
+    storageLimitBytes: int
+    documentCount: int
+
+
+class AdminUserListResponse(BaseModel):
+    users: list[AdminUserSummary]
+
+
+class AdminDocumentSummary(BaseModel):
+    id: str
+    name: str
+    sizeBytes: int
+    createdAt: dt.datetime
+    modifiedAt: dt.datetime
+
+
+class AdminUserDetailResponse(BaseModel):
+    user: AdminUserSummary
+    documents: list[AdminDocumentSummary]
+
+
+class AdminSetActiveBody(BaseModel):
+    isActive: bool
+
+
+# ---------------------------------------------------------------------------
+# Admin: devices -- GET /admin/devices
+# ---------------------------------------------------------------------------
+class AdminDeviceSummary(BaseModel):
+    id: int
+    userEmail: str | None = None
+    platform: str | None = None
+    appVersion: str | None = None
+    createdAt: dt.datetime
+    lastSeenAt: dt.datetime
+
+
+class AdminDeviceListResponse(BaseModel):
+    devices: list[AdminDeviceSummary]
+    totalCount: int
+
+
+# ---------------------------------------------------------------------------
+# Admin: force update -- GET/PUT /admin/app-config
+# ---------------------------------------------------------------------------
+class AdminAppConfigResponse(BaseModel):
+    minSupportedVersion: str
+    latestVersion: str
+    playStoreUrl: str
+
+
+class AdminAppConfigBody(BaseModel):
+    minSupportedVersion: str
+    latestVersion: str
+    playStoreUrl: str
+
+
+# ---------------------------------------------------------------------------
+# Admin: notifications -- POST /admin/notifications/send
+# ---------------------------------------------------------------------------
+class AdminNotificationSendBody(BaseModel):
+    title: str
+    body: str
+    imageUrl: str | None = None
+    target: Literal["all", "device"] = "all"
+    deviceId: int | None = None  # required when target == "device"
+
+
+class AdminNotificationSendResponse(BaseModel):
+    message: str
+    successCount: int
+    failureCount: int
